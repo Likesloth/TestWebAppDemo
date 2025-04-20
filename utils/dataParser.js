@@ -75,6 +75,15 @@ async function processDataDictionary(dataDictionaryPath) {
     value: a.$.value
   }));
 
+  // // log to see the data array format
+  // console.log("=== processDataDictionary outputs ===");
+  // console.log("inputsMeta:", JSON.stringify(inputsMeta, null, 2));
+  // console.log("outputMeta:", JSON.stringify(outputMeta, null, 2));
+  // console.log("rangeConditions:", JSON.stringify(rangeConditions, null, 2));
+  // console.log("typeConditions:", JSON.stringify(typeConditions, null, 2));
+  // console.log("actions:", JSON.stringify(actions, null, 2));
+  // console.log("======================================");
+
   return {
     inputsMeta,
     outputMeta,
@@ -82,17 +91,32 @@ async function processDataDictionary(dataDictionaryPath) {
     typeConditions,
     actions
   };
+
 }
 
 /** Reads DecisionTree.xml and returns an array of <Decision> nodes */
 async function processDecisionTree(decisionTreePath) {
   const data = await parseXMLFile(decisionTreePath);
+
+  // 1) Log the entire parsed XML → JS object
+  // console.log("=== raw DecisionTree data ===");
+  // console.log(JSON.stringify(data, null, 2)); //Raw data
+
   if (!data.DecisionTree || !data.DecisionTree.DecisionS) {
     throw new Error("Invalid structure in DecisionTree XML.");
   }
+
+  // 2) Extract the <Decision> node(s)
   const dec = data.DecisionTree.DecisionS.Decision;
+
+  // 3) Log the extracted decision nodes
+  // console.log("=== extracted Decision nodes ===");
+  // console.log(JSON.stringify(dec, null, 2)); //extract data
+
+  // 4) Return as array
   return Array.isArray(dec) ? dec : [dec];
 }
+
 
 module.exports = {
     calculateMidpoint,
