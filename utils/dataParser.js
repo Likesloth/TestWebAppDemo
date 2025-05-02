@@ -7,9 +7,11 @@ function calculateMidpoint(min, max) {
 
 /**
  * Reads UseCaseDataDic.xml and returns:
- *  - inputsMeta:    [{ type, varName }, …]
- *  - outputMeta:    { type, varName }
- *  - rangeConditions, typeConditions, actions
+ *  - inputsMeta:       [{ varName, type }]
+ *  - outputMeta:       { varName, type }
+ *  - rangeConditions:  [{ id, varName, min, max, mid }]
+ *  - typeConditions:   [{ id, varName, label }]
+ *  - actions:          [{ id, value }]
  */
 async function processDataDictionary(dataDictionaryPath) {
   const data = await parseXMLFile(dataDictionaryPath);
@@ -20,69 +22,67 @@ async function processDataDictionary(dataDictionaryPath) {
     ? data.UC.Usecase[0]
     : data.UC.Usecase;
 
-  // Capture input metadata
+  // Inputs
   const inputs = Array.isArray(usecase.Input)
     ? usecase.Input
     : [usecase.Input];
 
-  const inputsMeta = inputs.map(input => ({
-    type:    input.Type,      // "Range" or "Ordinal"
-    varName: input.Varname    // e.g. "Order Price"
-  }));
-
-  // Extract conditions
+  // Metadata arrays
+  const inputsMeta      = [];
   const rangeConditions = [];
   const typeConditions  = [];
 
   inputs.forEach(input => {
+    const varName = input.Varname;     // e.g. "Order Price" or "AgeRange"
+    const type    = input.Type;        // "Range" or "Ordinal"
+    inputsMeta.push({ varName, type });
+
+    // flatten Condition tags
     const conds = Array.isArray(input.Condition)
       ? input.Condition
       : [input.Condition];
 
-    if (input.Type === "Range") {
+    if (type === "Range") {
       conds.forEach(c => {
+        const { id, min, max } = c.$;
         rangeConditions.push({
-          id:  c.$.id,
-          min: Number(c.$.min),
-          max: Number(c.$.max),
-          mid: calculateMidpoint(c.$.min, c.$.max)
+          id,
+          varName,
+          min: Number(min),
+          max: Number(max),
+          mid: calculateMidpoint(min, max)
         });
       });
-    } else if (input.Type === "Ordinal") {
+    }
+    else if (type === "Ordinal") {
       conds.forEach(c => {
+        const { id, value } = c.$;
         typeConditions.push({
-          id:    c.$.id,
-          label: c.$.value
+          id,
+          varName,
+          label: value
         });
       });
     }
   });
 
-  // Capture output metadata and actions
+  // Output
   const output = usecase.Output;
   if (!output) throw new Error("Output not found in Usecase.");
 
   const outputMeta = {
-    type:    output.Type,      // e.g. "Ordinal"
-    varName: output.Varname    // e.g. "Total Discount"
+    varName: output.Varname,  // e.g. "Total Discount"
+    type:    output.Type      // e.g. "Ordinal"
   };
 
-  const rawActions = Array.isArray(output.Action)
+  const rawActs = Array.isArray(output.Action)
     ? output.Action
     : [output.Action];
-  const actions = rawActions.map(a => ({
+
+  const actions = rawActs.map(a => ({
     id:    a.$.id,
     value: a.$.value
   }));
-
-  // // log to see the data array format
-  // console.log("=== processDataDictionary outputs ===");
-  // console.log("inputsMeta:", JSON.stringify(inputsMeta, null, 2));
-  // console.log("outputMeta:", JSON.stringify(outputMeta, null, 2));
-  // console.log("rangeConditions:", JSON.stringify(rangeConditions, null, 2));
-  // console.log("typeConditions:", JSON.stringify(typeConditions, null, 2));
-  // console.log("actions:", JSON.stringify(actions, null, 2));
-  // console.log("======================================");
 
   return {
     inputsMeta,
@@ -91,35 +91,20 @@ async function processDataDictionary(dataDictionaryPath) {
     typeConditions,
     actions
   };
-
 }
 
 /** Reads DecisionTree.xml and returns an array of <Decision> nodes */
 async function processDecisionTree(decisionTreePath) {
   const data = await parseXMLFile(decisionTreePath);
-
-  // 1) Log the entire parsed XML → JS object
-  // console.log("=== raw DecisionTree data ===");
-  // console.log(JSON.stringify(data, null, 2)); //Raw data
-
   if (!data.DecisionTree || !data.DecisionTree.DecisionS) {
     throw new Error("Invalid structure in DecisionTree XML.");
   }
-
-  // 2) Extract the <Decision> node(s)
   const dec = data.DecisionTree.DecisionS.Decision;
-
-  // 3) Log the extracted decision nodes
-  // console.log("=== extracted Decision nodes ===");
-  // console.log(JSON.stringify(dec, null, 2)); //extract data
-
-  // 4) Return as array
   return Array.isArray(dec) ? dec : [dec];
 }
 
-
 module.exports = {
-    calculateMidpoint,
-    processDataDictionary,
-    processDecisionTree
-  };
+  calculateMidpoint,
+  processDataDictionary,
+  processDecisionTree
+};

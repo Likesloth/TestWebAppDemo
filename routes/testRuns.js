@@ -1,22 +1,35 @@
+// routes/testRuns.js
 const express = require('express');
 const router  = express.Router();
-const auth    = require('../middleware/auth');
-const ctrl    = require('../controllers/testRunController');
 const upload  = require('../utils/upload');
+const auth    = require('../middleware/auth');
+const {
+  createTestRun,
+  listTestRuns,
+  getTestRun,
+  downloadCsv
+} = require('../controllers/testRunController');
 
-// create + generate → must be logged in
+// 1) CSV download: public, no auth needed
+router.get('/:id/csv', downloadCsv);
+
+// 2) All the rest *do* require a valid JWT
+router.use(auth);
+
+// POST   /api/runs        → create a run
 router.post(
   '/',
-  auth,
   upload.fields([
-    { name: 'dataDictionary' },
-    { name: 'decisionTree' }
+    { name: 'dataDictionary', maxCount: 1 },
+    { name: 'decisionTree',   maxCount: 1 }
   ]),
-  ctrl.createTestRun
+  createTestRun
 );
 
-// list & detail → must be logged in
-router.get('/',    auth, ctrl.listTestRuns);
-router.get('/:id', auth, ctrl.getTestRun);
+// GET    /api/runs        → list runs
+router.get('/', listTestRuns);
+
+// GET    /api/runs/:id    → get run metadata
+router.get('/:id', getTestRun);
 
 module.exports = router;

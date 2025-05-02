@@ -18,9 +18,8 @@ async function register(req, res) {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-}
-
-async function login(req, res) {
+} 
+async function login(req, res) {  
   try {
     const { username, password } = req.body;
     const user = await User.findOne({ username });

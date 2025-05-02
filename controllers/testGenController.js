@@ -1,33 +1,36 @@
-const fs   = require('fs');
-const path = require('path');
-const createCsvWriter = require('csv-writer').createObjectCsvWriter;
-const generatePartitions      = require('../utils/partitionGenerator');
-const generateTestCasesLogic  = require('../utils/testCaseGenerator');
+// controllers/testGenController.js
 
-async function exportCSV(testCases) {
-  const dir = path.join(__dirname, '../exports');
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+const { stringify }          = require('csv-stringify/sync');
+const generatePartitions     = require('../utils/partitionGenerator');
+const generateTestCasesLogic = require('../utils/testCaseGenerator');
 
-  const filename = `testCases-${Date.now()}.csv`;
-  const filePath = path.join(dir, filename);
+module.exports.generateAll = async (dataDictionaryPath, decisionTreePath) => {
+  // 1) Generate partitions
+  const partitions = await generatePartitions(dataDictionaryPath);
 
-  const csvWriter = createCsvWriter({
-    path: filePath,
-    header: [
-      { id: 'testCaseID',       title: 'Test Case ID' },
-      { id: 'orderPrice',       title: 'Order Price' },
-      { id: 'customerType',     title: 'Customer Type' },
-      { id: 'expectedDiscount', title: 'Expected Discount' }
-    ]
-  });
+  // 2) Generate test cases (dynamic inputs/expected maps)
+  const testCases  = await generateTestCasesLogic(dataDictionaryPath, decisionTreePath);
 
-  await csvWriter.writeRecords(testCases);
-  return filePath;
-}
+  if (!testCases.length) {
+    throw new Error('No test cases generated');
+  }
 
-module.exports.generateAll = async (ddPath, dtPath) => {
-  const partitions = await generatePartitions(ddPath);
-  const testCases  = await generateTestCasesLogic(ddPath, dtPath);
-  const csvFile    = await exportCSV(testCases);
-  return { partitions, testCases, csvFile };
+  // 3) Build CSV headers from the first test case
+  const first        = testCases[0];
+  const inputKeys    = Object.keys(first.inputs);
+  const expectedKeys = Object.keys(first.expected);
+  const header       = ['Test Case ID', ...inputKeys, ...expectedKeys];
+
+  // 4) Flatten each test case into an array of values
+  const records = testCases.map(tc => [
+    tc.testCaseID,
+    ...inputKeys.map(k => tc.inputs[k]),
+    ...expectedKeys.map(k => tc.expected[k])
+  ]);
+
+  // 5) Stringify to CSV in-memory
+  const csvData = stringify([header, ...records]);
+
+  // 6) Return everything
+  return { partitions, testCases, csvData };
 };

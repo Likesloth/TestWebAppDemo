@@ -9,6 +9,7 @@ const parseXMLFile = (filePath) => {
       parser.parseString(data, (err, result) => {
         if (err) return reject(err);
         resolve(result);
+        // console.log(result);
       });
     });
   });
