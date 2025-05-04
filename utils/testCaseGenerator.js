@@ -71,11 +71,11 @@ module.exports = async function generateTestCasesLogic(dataDictionaryPath, decis
       });
     }
   });
-
-  console.log(
-    "🔍 testCases from generateTestCasesLogic:",
-    JSON.stringify(testCases, null, 2)
-  );
+// log data
+  // console.log(
+  //   "🔍 testCases from generateTestCasesLogic:",
+  //   JSON.stringify(testCases, null, 2)
+  // );
 
   return testCases;
 };

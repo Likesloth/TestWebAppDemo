@@ -9,6 +9,7 @@ const {
   getTestRun,
   downloadCsv
 } = require('../controllers/testRunController');
+const validateUploadedXml = require('../utils/xmlValidator');
 
 // 1) CSV download: public, no auth needed
 router.get('/:id/csv', downloadCsv);
@@ -23,6 +24,7 @@ router.post(
     { name: 'dataDictionary', maxCount: 1 },
     { name: 'decisionTree',   maxCount: 1 }
   ]),
+  validateUploadedXml,
   createTestRun
 );
 
