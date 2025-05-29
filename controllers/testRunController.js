@@ -9,7 +9,7 @@ exports.createTestRun = async (req, res) => {
     const dt = req.files.decisionTree  [0].path;
 
     // Generate partitions, testCases, and in-memory csvData
-    const { partitions, testCases, csvData } = await generateAll(dd, dt);
+    const { partitions, testCases, syntaxResults, csvData } = await generateAll(dd, dt);
 
     // Persist into MongoDB
     const run = await TestRun.create({
@@ -18,6 +18,7 @@ exports.createTestRun = async (req, res) => {
       decisionTreeFilename:   req.files.decisionTree  [0].filename,
       partitions,
       testCases,
+      syntaxResults,
       csvData
     });
 
@@ -27,6 +28,7 @@ exports.createTestRun = async (req, res) => {
       runId:      run._id,
       partitions,
       testCases,
+      syntaxResults,
       csvUrl:     `${req.protocol}://${req.get('host')}/api/runs/${run._id}/csv`
     });
   } catch (err) {
@@ -57,6 +59,7 @@ exports.getTestRun = async (req, res) => {
     success:    true,
     partitions: run.partitions,
     testCases:  run.testCases,
+    syntaxResults: run.syntaxResults,
     csvUrl
   });
 };

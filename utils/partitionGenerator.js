@@ -1,4 +1,4 @@
-const { processDataDictionary } = require('./dataParser');
+const { processDataDictionary } = require('./ecpParser');
 
 module.exports = async function generatePartitions(dataDictionaryPath) {
   const {

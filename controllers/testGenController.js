@@ -1,36 +1,33 @@
-// controllers/testGenController.js
+// backend/controllers/testGenController.js
+const { stringify }               = require('csv-stringify/sync');
+const generatePartitions          = require('../utils/partitionGenerator');
+const generateTestCasesLogic      = require('../utils/testCaseGenerator');
+const { processDataDictionary, processDecisionTree } = require('../utils/ecpParser');
+const { processSyntaxDefs }       = require('../utils/syntaxParser');
+const { generateSyntaxTests }     = require('../utils/syntaxTestGenerator');
 
-const { stringify }          = require('csv-stringify/sync');
-const generatePartitions     = require('../utils/partitionGenerator');
-const generateTestCasesLogic = require('../utils/testCaseGenerator');
+module.exports.generateAll = async (ddPath, dtPath) => {
+  // ─── ECP ─────────────────────────────────────────────────────
+  const partitions = await generatePartitions(ddPath);
+  const testCases  = await generateTestCasesLogic(ddPath, dtPath);
+  if (!testCases.length) throw new Error('No ECP test cases generated');
 
-module.exports.generateAll = async (dataDictionaryPath, decisionTreePath) => {
-  // 1) Generate partitions
-  const partitions = await generatePartitions(dataDictionaryPath);
-
-  // 2) Generate test cases (dynamic inputs/expected maps)
-  const testCases  = await generateTestCasesLogic(dataDictionaryPath, decisionTreePath);
-
-  if (!testCases.length) {
-    throw new Error('No test cases generated');
-  }
-
-  // 3) Build CSV headers from the first test case
+  // Build in-memory CSV for the ECP testCases
   const first        = testCases[0];
   const inputKeys    = Object.keys(first.inputs);
   const expectedKeys = Object.keys(first.expected);
   const header       = ['Test Case ID', ...inputKeys, ...expectedKeys];
-
-  // 4) Flatten each test case into an array of values
-  const records = testCases.map(tc => [
+  const records      = testCases.map(tc => [
     tc.testCaseID,
     ...inputKeys.map(k => tc.inputs[k]),
     ...expectedKeys.map(k => tc.expected[k])
   ]);
-
-  // 5) Stringify to CSV in-memory
   const csvData = stringify([header, ...records]);
 
-  // 6) Return everything
-  return { partitions, testCases, csvData };
+  // ─── Syntax ──────────────────────────────────────────────────
+  // reuse your ECP parser to pull out the new <Syntax> section
+  const syntaxDefs    = await processSyntaxDefs(ddPath);
+  const syntaxResults = generateSyntaxTests(syntaxDefs);
+
+  return { partitions, testCases, syntaxResults, csvData };
 };

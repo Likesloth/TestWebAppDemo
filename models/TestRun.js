@@ -11,6 +11,21 @@ const PartitionSchema = new Schema({
   }]
 }, { _id: false });
 
+const SyntaxSchema = new Schema({
+  name:        String,
+  description: String,
+  regex:       String,
+  type:        String,
+  length:      String,
+  testCases: {
+    valid:             String,
+    invalidValue:      String,
+    invalidSubstitution:String,
+    invalidOmission:   String,
+    invalidAddition:   String
+  }
+}, { _id: false });
+
 const TestCaseSchema = new Schema({
   testCaseID: { type: String, required: true },
   inputs:     { type: Map, of: Schema.Types.Mixed, required: true },
@@ -24,6 +39,7 @@ const TestRunSchema = new Schema({
   decisionTreeFilename:   String,
   partitions:             [PartitionSchema],
   testCases:              [TestCaseSchema],
+  syntaxResults:          [SyntaxSchema],    // <-- new
   csvData:                { type: String, required: true }
 });
 

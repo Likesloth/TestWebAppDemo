@@ -2,7 +2,7 @@
 const {
   processDataDictionary,
   processDecisionTree
-} = require('./dataParser');
+} = require('./ecpParser');
 
 module.exports = async function generateTestCasesLogic(dataDictionaryPath, decisionTreePath) {
   const {
