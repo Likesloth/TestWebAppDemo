@@ -1,23 +1,26 @@
 // routes/testRuns.js
-const express = require('express');
-const router  = express.Router();
-const upload  = require('../utils/upload');
-const auth    = require('../middleware/auth');
+const express = require('express')
+const router  = express.Router()
+const upload  = require('../utils/upload')
+const auth    = require('../middleware/auth')
 const {
   createTestRun,
   listTestRuns,
   getTestRun,
-  downloadCsv
-} = require('../controllers/testRunController');
-const validateUploadedXml = require('../utils/xmlValidator');
+  downloadEcpCsv,
+  downloadSyntaxCsv,
+  downloadCombined  
+} = require('../controllers/testRunController')
+const validateUploadedXml = require('../utils/xmlValidator')
 
-// 1) CSV download: public, no auth needed
-router.get('/:id/csv', downloadCsv);
+// Public download endpoints
+router.get('/:id/ecp-csv',    downloadEcpCsv)
+router.get('/:id/syntax-csv', downloadSyntaxCsv)
+router.get('/:id/csv',        downloadCombined)  // ← use downloadCombined, not downloadCsv
 
-// 2) All the rest *do* require a valid JWT
-router.use(auth);
+// All the rest require auth
+router.use(auth)
 
-// POST   /api/runs        → create a run
 router.post(
   '/',
   upload.fields([
@@ -26,12 +29,9 @@ router.post(
   ]),
   validateUploadedXml,
   createTestRun
-);
+)
 
-// GET    /api/runs        → list runs
-router.get('/', listTestRuns);
+router.get('/',  listTestRuns)
+router.get('/:id', getTestRun)
 
-// GET    /api/runs/:id    → get run metadata
-router.get('/:id', getTestRun);
-
-module.exports = router;
+module.exports = router

@@ -33,14 +33,16 @@ const TestCaseSchema = new Schema({
 }, { _id: false });
 
 const TestRunSchema = new Schema({
-  user:                   { type: Schema.Types.ObjectId, ref: 'User', required: true },
-  createdAt:              { type: Date, default: Date.now },
+  user:                 { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  createdAt:            { type: Date, default: Date.now },
   dataDictionaryFilename: String,
   decisionTreeFilename:   String,
-  partitions:             [PartitionSchema],
-  testCases:              [TestCaseSchema],
-  syntaxResults:          [SyntaxSchema],    // <-- new
-  csvData:                { type: String, required: true }
+  partitions:           [PartitionSchema],
+  testCases:            [TestCaseSchema],
+  syntaxResults:        [SyntaxSchema],
+  ecpCsvData:           { type: String, required: true },
+  syntaxCsvData:        { type: String, required: true },
+  combinedCsvData:      { type: String, required: true }
 });
 
 module.exports = mongoose.model('TestRun', TestRunSchema);
