@@ -1,3 +1,5 @@
+// backend/utils/ecpParser.js
+
 const { parseXMLFile } = require('./xmlParser');
 
 /** Midpoint helper */
@@ -7,42 +9,45 @@ function calculateMidpoint(min, max) {
 
 /**
  * Reads UseCaseDataDic.xml and returns:
- *  - inputsMeta:       [{ varName, type }]
- *  - outputMeta:       { varName, type }
+ *  - inputsMeta:       [{ varName, scale }]
+ *  - outputMeta:       { varName, scale }
  *  - rangeConditions:  [{ id, varName, min, max, mid }]
  *  - typeConditions:   [{ id, varName, label }]
  *  - actions:          [{ id, value }]
  */
 async function processDataDictionary(dataDictionaryPath) {
   const data = await parseXMLFile(dataDictionaryPath);
+
   if (!data.UC || !data.UC.Usecase) {
     throw new Error("Invalid structure: UC/Usecase not found");
   }
+
   const usecase = Array.isArray(data.UC.Usecase)
     ? data.UC.Usecase[0]
     : data.UC.Usecase;
 
-  // Inputs
+  // Inputs (could be multiple)
   const inputs = Array.isArray(usecase.Input)
     ? usecase.Input
     : [usecase.Input];
 
-  // Metadata arrays
   const inputsMeta      = [];
   const rangeConditions = [];
   const typeConditions  = [];
 
   inputs.forEach(input => {
-    const varName = input.Varname;     // e.g. "Order Price" or "AgeRange"
-    const type    = input.Type;        // "Range" or "Ordinal"
-    inputsMeta.push({ varName, type });
+    const varName = input.Varname;
+    const scale   = input.Scale;    // now reading <Scale> instead of <Type>
+    inputsMeta.push({ varName, scale });
 
-    // flatten Condition tags
-    const conds = Array.isArray(input.Condition)
-      ? input.Condition
-      : [input.Condition];
+    let conds = [];
+    if (input.Condition) {
+      conds = Array.isArray(input.Condition)
+        ? input.Condition
+        : [input.Condition];
+    }
 
-    if (type === "Range") {
+    if (scale === "Range") {
       conds.forEach(c => {
         const { id, min, max } = c.$;
         rangeConditions.push({
@@ -54,7 +59,7 @@ async function processDataDictionary(dataDictionaryPath) {
         });
       });
     }
-    else if (type === "Ordinal") {
+    else if (scale === "Nominal" || scale === "Ordinal") {
       conds.forEach(c => {
         const { id, value } = c.$;
         typeConditions.push({
@@ -66,13 +71,15 @@ async function processDataDictionary(dataDictionaryPath) {
     }
   });
 
-  // Output
+  // Output block
   const output = usecase.Output;
-  if (!output) throw new Error("Output not found in Usecase.");
+  if (!output) {
+    throw new Error("Output not found in Usecase.");
+  }
 
   const outputMeta = {
-    varName: output.Varname,  // e.g. "Total Discount"
-    type:    output.Type      // e.g. "Ordinal"
+    varName: output.Varname,
+    scale:   output.Scale
   };
 
   const rawActs = Array.isArray(output.Action)
@@ -93,7 +100,7 @@ async function processDataDictionary(dataDictionaryPath) {
   };
 }
 
-/** Reads DecisionTree.xml and returns an array of <Decision> nodes */
+/** DecisionTree parser unchanged */
 async function processDecisionTree(decisionTreePath) {
   const data = await parseXMLFile(decisionTreePath);
   if (!data.DecisionTree || !data.DecisionTree.DecisionS) {
