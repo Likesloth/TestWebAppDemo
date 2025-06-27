@@ -9,8 +9,8 @@ function calculateMidpoint(min, max) {
 
 /**
  * Reads UseCaseDataDic.xml and returns:
- *  - inputsMeta:       [{ varName, scale }]
- *  - outputMeta:       { varName, scale }
+ *  - inputsMeta:       [{ varName, type }]
+ *  - outputMeta:       { varName, type }
  *  - rangeConditions:  [{ id, varName, min, max, mid }]
  *  - typeConditions:   [{ id, varName, label }]
  *  - actions:          [{ id, value }]
@@ -26,7 +26,6 @@ async function processDataDictionary(dataDictionaryPath) {
     ? data.UC.Usecase[0]
     : data.UC.Usecase;
 
-  // Inputs (could be multiple)
   const inputs = Array.isArray(usecase.Input)
     ? usecase.Input
     : [usecase.Input];
@@ -37,15 +36,12 @@ async function processDataDictionary(dataDictionaryPath) {
 
   inputs.forEach(input => {
     const varName = input.Varname;
-    const scale   = input.Scale;    // now reading <Scale> instead of <Type>
-    inputsMeta.push({ varName, scale });
+    const scale   = input.Scale;    // reading <Scale> instead of <Type>
+    inputsMeta.push({ varName, type: scale });
 
-    let conds = [];
-    if (input.Condition) {
-      conds = Array.isArray(input.Condition)
-        ? input.Condition
-        : [input.Condition];
-    }
+    const conds = Array.isArray(input.Condition)
+      ? input.Condition
+      : (input.Condition ? [input.Condition] : []);
 
     if (scale === "Range") {
       conds.forEach(c => {
@@ -71,7 +67,6 @@ async function processDataDictionary(dataDictionaryPath) {
     }
   });
 
-  // Output block
   const output = usecase.Output;
   if (!output) {
     throw new Error("Output not found in Usecase.");
@@ -79,7 +74,7 @@ async function processDataDictionary(dataDictionaryPath) {
 
   const outputMeta = {
     varName: output.Varname,
-    scale:   output.Scale
+    type:    output.Scale   // reading <Scale> instead of <Type>
   };
 
   const rawActs = Array.isArray(output.Action)

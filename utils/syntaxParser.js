@@ -3,10 +3,7 @@ const { parseXMLFile } = require('./xmlParser');
 
 async function processSyntaxDefs(dataDictionaryPath) {
   const data = await parseXMLFile(dataDictionaryPath);
-
-  if (!data.UC || !data.UC.Usecase) {
-    return [];
-  }
+  if (!data.UC || !data.UC.Usecase) return [];
 
   const usecase = Array.isArray(data.UC.Usecase)
     ? data.UC.Usecase[0]
@@ -19,16 +16,23 @@ async function processSyntaxDefs(dataDictionaryPath) {
   const defs = [];
 
   inputs.forEach(input => {
+    // look for a child <Syntax Pattern="…"/>
     if (!input.Syntax) return;
+    const syntaxes = Array.isArray(input.Syntax)
+      ? input.Syntax
+      : [input.Syntax];
 
-    const s = input.Syntax;
-
-    defs.push({
-      name:        input.Varname,
-      description: input.Varname,          // or any other description you prefer
-      pattern:     s.Pattern,
-      type:        s.Type,
-      length:      s.Length
+    syntaxes.forEach(syn => {
+      // syn may be either { $: { Pattern: "…"} } or syn.Pattern
+      const pattern  = syn.$?.Pattern ?? syn.Pattern;
+      defs.push({
+        name:        input.Varname,
+        description: input.Varname,
+        pattern,
+        // you can pull type/length from DataType/Length if you want
+        type:        syn.$?.Type ?? input.DataType,
+        length:      syn.$?.Length ?? ''
+      });
     });
   });
 
