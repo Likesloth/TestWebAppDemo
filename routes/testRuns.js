@@ -9,6 +9,7 @@ const {
   getTestRun,
   downloadEcpCsv,
   downloadSyntaxCsv,
+  downloadStateCsv,     // ← add this
   downloadCombined  
 } = require('../controllers/testRunController')
 const validateUploadedXml = require('../utils/xmlValidator')
@@ -16,7 +17,8 @@ const validateUploadedXml = require('../utils/xmlValidator')
 // Public download endpoints
 router.get('/:id/ecp-csv',    downloadEcpCsv)
 router.get('/:id/syntax-csv', downloadSyntaxCsv)
-router.get('/:id/csv',        downloadCombined)  // ← use downloadCombined, not downloadCsv
+router.get('/:id/state-csv',  downloadStateCsv)  // ← now defined
+router.get('/:id/csv',        downloadCombined)
 
 // All the rest require auth
 router.use(auth)
@@ -25,7 +27,8 @@ router.post(
   '/',
   upload.fields([
     { name: 'dataDictionary', maxCount: 1 },
-    { name: 'decisionTree',   maxCount: 1 }
+    { name: 'decisionTree',   maxCount: 1 },
+    { name: 'stateMachine',   maxCount: 1 }
   ]),
   validateUploadedXml,
   createTestRun

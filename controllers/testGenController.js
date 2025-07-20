@@ -1,45 +1,50 @@
 // controllers/testGenController.js
 
-const { stringify }          = require('csv-stringify/sync')
-const generatePartitions     = require('../utils/partitionGenerator')
-const generateTestCasesLogic = require('../utils/testCaseGenerator')
+const { stringify }            = require('csv-stringify/sync')
+const path                    = require('path')
 
-// ECP XML parsing
-const {
-  processDataDictionary,
-  processDecisionTree
-} = require('../utils/ecpParser')
-
-// Syntax XML parsing + test generation
+const generatePartitions      = require('../utils/partitionGenerator')
+const generateTestCasesLogic  = require('../utils/testCaseGenerator')
 const { processSyntaxDefs }   = require('../utils/syntaxParser')
 const { generateSyntaxTests } = require('../utils/syntaxTestGenerator')
+const { processStateDefs }    = require('../utils/stateParser')
+const { generateStateTests }  = require('../utils/stateTestGenerator')
 
-module.exports.generateAll = async (dataDictionaryPath, decisionTreePath) => {
-  // 1) ECP partitions & test cases
+module.exports.generateAll = async (
+  dataDictionaryPath,
+  decisionTreePath,
+  stateMachinePath        // ← new third parameter
+) => {
+  // 1) ECP
   const partitions = await generatePartitions(dataDictionaryPath)
   const testCases  = await generateTestCasesLogic(dataDictionaryPath, decisionTreePath)
 
-  // 2) Syntax definitions & test cases
+  // 2) Syntax
   const syntaxDefs    = await processSyntaxDefs(dataDictionaryPath)
   const syntaxResults = generateSyntaxTests(syntaxDefs)
 
-  // 3) Build ECP-only CSV
-  const ecpInputKeys = testCases.length ? Object.keys(testCases[0].inputs) : []
+  // 3) State-transition
+  //    if the caller passed in a file, use that; otherwise fall back
+  const smPath = stateMachinePath
+    ? stateMachinePath
+    : path.join(__dirname, '../xmls/StateMachine.xml')
+
+  const stateDefs = await processStateDefs(smPath)
+  const { valid, invalid } = generateStateTests(stateDefs)
+
+  // --- ECP CSV ---
+  const ecpInputKeys    = testCases.length ? Object.keys(testCases[0].inputs) : []
   const ecpExpectedKeys = testCases.length ? Object.keys(testCases[0].expected) : []
-  const ecpHeader = [
-    'Test Case ID',
-    ...ecpInputKeys,
-    ...ecpExpectedKeys
-  ]
-  const ecpRows = testCases.map(tc => [
+  const ecpHeader       = ['Test Case ID', ...ecpInputKeys, ...ecpExpectedKeys]
+  const ecpRows         = testCases.map(tc => [
     tc.testCaseID,
     ...ecpInputKeys.map(k => tc.inputs[k]),
     ...ecpExpectedKeys.map(k => tc.expected[k])
   ])
   const ecpCsvData = stringify([ecpHeader, ...ecpRows])
 
-  // 4) Build Syntax-only CSV
-  const synHeader = [
+  // --- Syntax CSV ---
+  const synHeader    = [
     'Name',
     'valid',
     'invalidValue',
@@ -47,7 +52,7 @@ module.exports.generateAll = async (dataDictionaryPath, decisionTreePath) => {
     'invalidAddition',
     'invalidSubstitution'
   ]
-  const synRows = syntaxResults.map(sr => [
+  const synRows      = syntaxResults.map(sr => [
     sr.name,
     sr.testCases.valid,
     sr.testCases.invalidValue,
@@ -57,41 +62,38 @@ module.exports.generateAll = async (dataDictionaryPath, decisionTreePath) => {
   ])
   const syntaxCsvData = stringify([synHeader, ...synRows])
 
-  // 5) Build combined CSV (tags each row with Technique)
-  const combinedHeader = [
-    'Technique',
-    ...ecpHeader,           // ECP columns
-    ...synHeader.slice(5)   // Syntax test-case columns only
+  // --- State CSV ---
+  const stateHeader = [
+    'Type',
+    'Test Case ID',
+    'Start State',
+    'Event',
+    'Expected State'
   ]
-  const combinedRows = [
-    ...testCases.map(tc => [
-      'ECP',
-      tc.testCaseID,
-      ...ecpInputKeys.map(k => tc.inputs[k]),
-      ...ecpExpectedKeys.map(k => tc.expected[k]),
-      // blank placeholders for syntax-columns
-      ...Array(synHeader.length - 5).fill('')
-    ]),
-    ...syntaxResults.map((sr, idx) => [
-      'Syntax',
-      `ST${String(idx+1).padStart(3,'0')}`,
-      // blank placeholders for ECP columns
-      ...Array(ecpHeader.length - 1).fill(''),
-      sr.testCases.valid,
-      sr.testCases.invalidValue,
-      sr.testCases.invalidOmission,
-      sr.testCases.invalidAddition,
-      sr.testCases.invalidSubstitution
-    ])
+  const stateRows   = [
+    ...valid  .map(tc => ['Valid',   tc.testCaseID, tc.startState, tc.event, tc.expectedState]),
+    ...invalid.map(tc => ['Invalid', tc.testCaseID, tc.startState, tc.event, '<no transition>'])
+  ]
+  const stateCsvData = stringify([stateHeader, ...stateRows])
+
+  // --- Combined CSV (ECP + Syntax only) ---
+  const combinedHeader = ['Technique', ...ecpHeader, ...synHeader]
+  const combinedRows   = [
+    ...ecpRows.map(r => ['ECP',    ...r, ...Array(synHeader.length).fill('')]),
+    ...synRows.map(r => ['Syntax', ...Array(ecpHeader.length).fill(''), ...r])
   ]
   const combinedCsvData = stringify([combinedHeader, ...combinedRows])
 
+  // --- Return everything ---
   return {
     partitions,
     testCases,
     syntaxResults,
+    stateValid:   valid,
+    stateInvalid: invalid,
     ecpCsvData,
     syntaxCsvData,
+    stateCsvData,
     combinedCsvData
   }
 }

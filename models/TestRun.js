@@ -26,6 +26,14 @@ const SyntaxSchema = new Schema({
   }
 }, { _id: false });
 
+const StateTestSchema = new Schema({
+  testCaseID:    String,
+  startState:    String,
+  event:         String,
+  expectedState: Schema.Types.Mixed,
+  type:          { type: String, enum:['Valid','Invalid'], required: true }
+}, { _id:false });
+
 const TestCaseSchema = new Schema({
   testCaseID: { type: String, required: true },
   inputs:     { type: Map, of: Schema.Types.Mixed, required: true },
@@ -39,10 +47,12 @@ const TestRunSchema = new Schema({
   decisionTreeFilename:   String,
   partitions:           [PartitionSchema],
   testCases:            [TestCaseSchema],
-  syntaxResults:        [SyntaxSchema],
-  ecpCsvData:           { type: String, required: true },
-  syntaxCsvData:        { type: String, required: true },
-  combinedCsvData:      { type: String, required: true }
+  syntaxResults:   [SyntaxSchema],
+  stateTests:      [StateTestSchema],
+  ecpCsvData:      { type: String, required: true },
+  syntaxCsvData:   { type: String, required: true },
+  stateCsvData:    { type: String, required: true },
+  combinedCsvData: { type: String, required: true }
 });
 
 module.exports = mongoose.model('TestRun', TestRunSchema);
