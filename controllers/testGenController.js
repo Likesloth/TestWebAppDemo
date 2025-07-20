@@ -1,14 +1,14 @@
 // controllers/testGenController.js
 
-const { stringify }            = require('csv-stringify/sync')
-const path                    = require('path')
+const { stringify } = require('csv-stringify/sync')
+const path = require('path')
 
-const generatePartitions      = require('../utils/partitionGenerator')
-const generateTestCasesLogic  = require('../utils/testCaseGenerator')
-const { processSyntaxDefs }   = require('../utils/syntaxParser')
+const generatePartitions = require('../utils/partitionGenerator')
+const generateTestCasesLogic = require('../utils/testCaseGenerator')
+const { processSyntaxDefs } = require('../utils/syntaxParser')
 const { generateSyntaxTests } = require('../utils/syntaxTestGenerator')
-const { processStateDefs }    = require('../utils/stateParser')
-const { generateStateTests }  = require('../utils/stateTestGenerator')
+const { processStateDefs } = require('../utils/stateParser')
+const { generateStateTests } = require('../utils/stateTestGenerator')
 
 module.exports.generateAll = async (
   dataDictionaryPath,
@@ -17,26 +17,27 @@ module.exports.generateAll = async (
 ) => {
   // 1) ECP
   const partitions = await generatePartitions(dataDictionaryPath)
-  const testCases  = await generateTestCasesLogic(dataDictionaryPath, decisionTreePath)
+  const testCases = await generateTestCasesLogic(dataDictionaryPath, decisionTreePath)
 
   // 2) Syntax
-  const syntaxDefs    = await processSyntaxDefs(dataDictionaryPath)
+  const syntaxDefs = await processSyntaxDefs(dataDictionaryPath)
   const syntaxResults = generateSyntaxTests(syntaxDefs)
 
-  // 3) State-transition
-  //    if the caller passed in a file, use that; otherwise fall back
+  // 3) State-transition: if they passed in a file, use it; otherwise fall back
   const smPath = stateMachinePath
     ? stateMachinePath
     : path.join(__dirname, '../xmls/StateMachine.xml')
 
-  const stateDefs = await processStateDefs(smPath)
-  const { valid, invalid } = generateStateTests(stateDefs)
+  // parse and generate
+  const { states, events, transitions } = await processStateDefs(smPath)
+  const { valid, invalid } = generateStateTests({ states, events, transitions })
+
 
   // --- ECP CSV ---
-  const ecpInputKeys    = testCases.length ? Object.keys(testCases[0].inputs) : []
+  const ecpInputKeys = testCases.length ? Object.keys(testCases[0].inputs) : []
   const ecpExpectedKeys = testCases.length ? Object.keys(testCases[0].expected) : []
-  const ecpHeader       = ['Test Case ID', ...ecpInputKeys, ...ecpExpectedKeys]
-  const ecpRows         = testCases.map(tc => [
+  const ecpHeader = ['Test Case ID', ...ecpInputKeys, ...ecpExpectedKeys]
+  const ecpRows = testCases.map(tc => [
     tc.testCaseID,
     ...ecpInputKeys.map(k => tc.inputs[k]),
     ...ecpExpectedKeys.map(k => tc.expected[k])
@@ -44,7 +45,7 @@ module.exports.generateAll = async (
   const ecpCsvData = stringify([ecpHeader, ...ecpRows])
 
   // --- Syntax CSV ---
-  const synHeader    = [
+  const synHeader = [
     'Name',
     'valid',
     'invalidValue',
@@ -52,7 +53,7 @@ module.exports.generateAll = async (
     'invalidAddition',
     'invalidSubstitution'
   ]
-  const synRows      = syntaxResults.map(sr => [
+  const synRows = syntaxResults.map(sr => [
     sr.name,
     sr.testCases.valid,
     sr.testCases.invalidValue,
@@ -70,16 +71,16 @@ module.exports.generateAll = async (
     'Event',
     'Expected State'
   ]
-  const stateRows   = [
-    ...valid  .map(tc => ['Valid',   tc.testCaseID, tc.startState, tc.event, tc.expectedState]),
+  const stateRows = [
+    ...valid.map(tc => ['Valid', tc.testCaseID, tc.startState, tc.event, tc.expectedState]),
     ...invalid.map(tc => ['Invalid', tc.testCaseID, tc.startState, tc.event, '<no transition>'])
   ]
   const stateCsvData = stringify([stateHeader, ...stateRows])
 
   // --- Combined CSV (ECP + Syntax only) ---
   const combinedHeader = ['Technique', ...ecpHeader, ...synHeader]
-  const combinedRows   = [
-    ...ecpRows.map(r => ['ECP',    ...r, ...Array(synHeader.length).fill('')]),
+  const combinedRows = [
+    ...ecpRows.map(r => ['ECP', ...r, ...Array(synHeader.length).fill('')]),
     ...synRows.map(r => ['Syntax', ...Array(ecpHeader.length).fill(''), ...r])
   ]
   const combinedCsvData = stringify([combinedHeader, ...combinedRows])
@@ -89,7 +90,7 @@ module.exports.generateAll = async (
     partitions,
     testCases,
     syntaxResults,
-    stateValid:   valid,
+    stateValid: valid,
     stateInvalid: invalid,
     ecpCsvData,
     syntaxCsvData,

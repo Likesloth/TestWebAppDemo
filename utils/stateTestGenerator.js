@@ -1,38 +1,44 @@
 // backend/utils/stateTestGenerator.js
 /**
- * Given { states, events, transitions }, returns
- *  - valid:   all transitions in XML
- *  - invalid: every (state × event) pair not in transitions
+ * Takes:
+ *  - states:      [ "Initial", "Vacant", … ]
+ *  - events:      [ "Put into service", "Clean room", … ]
+ *  - transitions: [ { from, event, to }, … ]
+ *
+ * Returns:
+ *  - valid:   [ { testCaseID, startState, event, expectedState, type:"Valid" }, … ]
+ *  - invalid: [ { testCaseID, startState, event, expectedState:null, type:"Invalid" }, … ]
  */
 function generateStateTests({ states, events, transitions }) {
-    // valid cases
-    const valid = transitions.map((t,i) => ({
-      testCaseID:   `STV${String(i+1).padStart(3,'0')}`,
-      startState:   t.from,
-      event:        t.event,
-      expectedState:t.to,
-      type:         'Valid'
-    }))
+    // 1) build valid tests
+    const valid = transitions.map((t, i) => ({
+      testCaseID:    `STV${String(i + 1).padStart(3, '0')}`,
+      startState:    t.from,
+      event:         t.event,
+      expectedState: t.to,
+      type:          'Valid'
+    }));
   
-    // invalid cases
-    const invalid = []
+    // 2) build invalid tests: any (state, event) combo NOT in transitions
+    const invalid = [];
+    let idx = 1;
     states.forEach(s => {
       events.forEach(e => {
-        const ok = transitions.some(t => t.from===s.id && t.event===e.id)
-        if (!ok) {
+        const has = transitions.some(t => t.from === s && t.event === e);
+        if (!has) {
           invalid.push({
-            testCaseID:   `STI${String(invalid.length+1).padStart(3,'0')}`,
-            startState:   s.id,
-            event:        e.id,
-            expectedState:null,
-            type:         'Invalid'
-          })
+            testCaseID:    `STI${String(idx++).padStart(3, '0')}`,
+            startState:    s,
+            event:         e,
+            expectedState: null,
+            type:          'Invalid'
+          });
         }
-      })
-    })
+      });
+    });
   
-    return { valid, invalid }
+    return { valid, invalid };
   }
   
-  module.exports = { generateStateTests }
+  module.exports = { generateStateTests };
   
