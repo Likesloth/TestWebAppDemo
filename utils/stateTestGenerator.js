@@ -1,58 +1,57 @@
 // backend/utils/stateTestGenerator.js
 
 /**
- * Given a known event, return the “most likely” target state.
- * Extend this map with whatever makes sense in your domain.
- */
-function guessExpectedState(event) {
-  const map = {
-    'Put into service':       'Vacant',
-    'Clean room':             'Available',
-    'Take out of service':    'Final',
-    'Check In':               'Occupied',
-    'Check out':              'Vacant'
-    // …add more event→state mappings here…
-  };
-  return map[event] || 'Unknown';
-}
-
-/**
- * Generate both valid and invalid state‐transition test cases
+ * Generate both valid and invalid state‐transition test cases,
+ * ensuring every invalid case gets a meaningful expectedState
+ * by mapping events to target states regardless of startState.
+ *
  * @param {{states: string[], events: string[], transitions: {from,event,to}[]}} param0
  * @returns {{ valid: Array, invalid: Array }}
  */
 function generateStateTests({ states, events, transitions }) {
+  // 1) Build maps:
+  //    • transitionMap: for exact valid transitions
+  //    • eventToTargetMap: for any occurrence of an event → target
+  const transitionMap   = {};
+  const eventToTargetMap = {};
+
+  transitions.forEach(({ from, event, to }) => {
+    // exact match
+    transitionMap[`${from}::${event}`] = to;
+
+    // general event→target (first seen wins)
+    if (!eventToTargetMap[event]) {
+      eventToTargetMap[event] = to;
+    }
+  });
+
   const valid = [];
   const invalid = [];
-  
-  // Build a lookup of all real transitions
-  const realMap = new Set(
-    transitions.map(t => `${t.from}||${t.event}`)
-  );
 
-  // 1) VALID test cases: exactly as defined in XML
+  // 2) VALID test cases
   let vCount = 1;
-  transitions.forEach(t => {
+  transitions.forEach(({ from, event, to }) => {
     valid.push({
-      testCaseID:    `STV${String(vCount++).padStart(3,'0')}`,
-      startState:    t.from,
-      event:         t.event,
-      expectedState: t.to,
+      testCaseID:    `STV${String(vCount++).padStart(3, '0')}`,
+      startState:    from,
+      event,
+      expectedState: to,
       type:          'Valid'
     });
   });
 
-  // 2) INVALID test cases: every other (state,event) combo
+  // 3) INVALID test cases: any (state,event) not in transitionMap
   let iCount = 1;
   states.forEach(state => {
     events.forEach(event => {
-      const key = `${state}||${event}`;
-      if (!realMap.has(key)) {
+      const key = `${state}::${event}`;
+      if (!transitionMap[key]) {
         invalid.push({
-          testCaseID:    `STI${String(iCount++).padStart(3,'0')}`,
+          testCaseID:    `STI${String(iCount++).padStart(3, '0')}`,
           startState:    state,
           event,
-          expectedState: guessExpectedState(event),  // never null now
+          // lookup in the broader event→target map
+          expectedState: eventToTargetMap[event] || 'Unknown',
           type:          'Invalid'
         });
       }
