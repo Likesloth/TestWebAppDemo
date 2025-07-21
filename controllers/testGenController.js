@@ -45,7 +45,7 @@ module.exports.generateAll = async (
     ]
     const stateRows = [
       ...valid.map(tc   => ['Valid',   tc.testCaseID, tc.startState, tc.event,   tc.expectedState]),
-      ...invalid.map(tc => ['Invalid', tc.testCaseID, tc.startState, tc.event, '<no transition>'])
+      ...invalid.map(tc => ['Invalid', tc.testCaseID, tc.startState, tc.event, tc.expectedState])
     ]
     stateCsvData = stringify([stateHeader, ...stateRows])
   }
