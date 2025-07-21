@@ -18,11 +18,11 @@ const SyntaxSchema = new Schema({
   type:        String,
   length:      String,
   testCases: {
-    valid:             String,
-    invalidValue:      String,
-    invalidSubstitution:String,
-    invalidOmission:   String,
-    invalidAddition:   String
+    valid:              String,
+    invalidValue:       String,
+    invalidSubstitution: String,
+    invalidOmission:    String,
+    invalidAddition:    String
   }
 }, { _id: false });
 
@@ -31,8 +31,8 @@ const StateTestSchema = new Schema({
   startState:    String,
   event:         String,
   expectedState: Schema.Types.Mixed,
-  type:          { type: String, enum:['Valid','Invalid'], required: true }
-}, { _id:false });
+  type:          { type: String, enum: ['Valid','Invalid'], required: true }
+}, { _id: false });
 
 const TestCaseSchema = new Schema({
   testCaseID: { type: String, required: true },
@@ -41,17 +41,27 @@ const TestCaseSchema = new Schema({
 }, { _id: false });
 
 const TestRunSchema = new Schema({
-  user:                 { type: Schema.Types.ObjectId, ref: 'User', required: true },
-  createdAt:            { type: Date, default: Date.now },
+  user:                   { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  createdAt:              { type: Date, default: Date.now },
   dataDictionaryFilename: String,
   decisionTreeFilename:   String,
-  partitions:           [PartitionSchema],
-  testCases:            [TestCaseSchema],
-  syntaxResults:   [SyntaxSchema],
-  stateTests:      [StateTestSchema],
+  partitions:             [PartitionSchema],
+  testCases:              [TestCaseSchema],
+  syntaxResults:          [SyntaxSchema],
+
+  // make stateTests optional, default to empty array
+  stateTests: {
+    type:    [StateTestSchema],
+    required: false,
+    default: []
+  },
+
   ecpCsvData:      { type: String, required: true },
   syntaxCsvData:   { type: String, required: true },
-  stateCsvData:    { type: String, required: true },
+
+  // make stateCsvData optional with default empty string
+  stateCsvData:    { type: String, required: false, default: '' },
+
   combinedCsvData: { type: String, required: true }
 });
 

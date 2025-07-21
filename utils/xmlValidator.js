@@ -5,7 +5,9 @@ module.exports = async function validateUploadedXml(req, res, next) {
   // grab Multer’s uploaded file objects
   const ddFile = req.files.dataDictionary?.[0];
   const dtFile = req.files.decisionTree  ?. [0];
+  const smFile = req.files.stateMachine  ?. [0]; // optional
 
+  // both Data Dictionary and Decision Tree are required
   if (!ddFile || !dtFile) {
     console.warn('[Validator] Missing one or both XML uploads');
     return res
@@ -16,12 +18,14 @@ module.exports = async function validateUploadedXml(req, res, next) {
       });
   }
 
-  // 1) Validate the Data Dictionary XML
+  // 1) Validate the Data Dictionary XML (from in-memory buffer)
   try {
-    await parseXMLFile(ddFile.path);
+    await parseXMLFile(ddFile.buffer);
     console.log(`[Validator] ✅ Parsed DataDictionary XML: ${ddFile.originalname}`);
   } catch (err) {
-    console.error(`[Validator] ❌ DataDictionary parse error (${ddFile.originalname}): ${err.message}`);
+    console.error(
+      `[Validator] ❌ DataDictionary parse error (${ddFile.originalname}): ${err.message}`
+    );
     return res
       .status(400)
       .json({
@@ -30,12 +34,14 @@ module.exports = async function validateUploadedXml(req, res, next) {
       });
   }
 
-  // 2) Validate the Decision Tree XML
+  // 2) Validate the Decision Tree XML (from in-memory buffer)
   try {
-    await parseXMLFile(dtFile.path);
+    await parseXMLFile(dtFile.buffer);
     console.log(`[Validator] ✅ Parsed DecisionTree XML: ${dtFile.originalname}`);
   } catch (err) {
-    console.error(`[Validator] ❌ DecisionTree parse error (${dtFile.originalname}): ${err.message}`);
+    console.error(
+      `[Validator] ❌ DecisionTree parse error (${dtFile.originalname}): ${err.message}`
+    );
     return res
       .status(400)
       .json({
@@ -44,6 +50,18 @@ module.exports = async function validateUploadedXml(req, res, next) {
       });
   }
 
-  // if both parsed successfully, move on
+  // 3) Optional: Validate State Machine XML if provided
+  if (smFile && smFile.buffer) {
+    try {
+      await parseXMLFile(smFile.buffer);
+    } catch (err) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid State Machine XML (${smFile.originalname}): ${err.message}`
+      });
+    }
+  }
+
+  // all uploads are well-formed XML; proceed
   next();
 };

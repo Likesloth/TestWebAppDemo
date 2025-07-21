@@ -1,8 +1,15 @@
 // backend/utils/syntaxParser.js
 const { parseXMLFile } = require('./xmlParser');
 
-async function processSyntaxDefs(dataDictionaryPath) {
-  const data = await parseXMLFile(dataDictionaryPath);
+/**
+ * Extracts <Syntax> definitions from a Data Dictionary XML
+ * (inputXml can be a String path or Buffer).
+ *
+ * @param {string|Buffer} inputXml
+ * @returns {Promise<Array<{name:string,description:string,pattern:string,type:string,length:string}>>}
+ */
+async function processSyntaxDefs(inputXml) {
+  const data = await parseXMLFile(inputXml);
   if (!data.UC || !data.UC.Usecase) return [];
 
   const usecase = Array.isArray(data.UC.Usecase)
@@ -16,21 +23,19 @@ async function processSyntaxDefs(dataDictionaryPath) {
   const defs = [];
 
   inputs.forEach(input => {
-    // look for a child <Syntax Pattern="…"/>
     if (!input.Syntax) return;
     const syntaxes = Array.isArray(input.Syntax)
       ? input.Syntax
       : [input.Syntax];
 
     syntaxes.forEach(syn => {
-      // syn may be either { $: { Pattern: "…"} } or syn.Pattern
-      const pattern  = syn.$?.Pattern ?? syn.Pattern;
+      // Pattern may live on syn.$ or directly as syn.Pattern
+      const pattern = syn.$?.Pattern ?? syn.Pattern;
       defs.push({
         name:        input.Varname,
         description: input.Varname,
         pattern,
-        // you can pull type/length from DataType/Length if you want
-        type:        syn.$?.Type ?? input.DataType,
+        type:        syn.$?.Type ?? input.DataType ?? '',
         length:      syn.$?.Length ?? ''
       });
     });

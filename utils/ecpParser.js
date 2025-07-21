@@ -8,15 +8,18 @@ function calculateMidpoint(min, max) {
 }
 
 /**
- * Reads UseCaseDataDic.xml and returns:
+ * Reads a Data Dictionary XML (either a filepath string or Buffer)
+ * and returns:
  *  - inputsMeta:       [{ varName, type }]
  *  - outputMeta:       { varName, type }
  *  - rangeConditions:  [{ id, varName, min, max, mid }]
  *  - typeConditions:   [{ id, varName, label }]
  *  - actions:          [{ id, value }]
+ *
+ * @param {string|Buffer} inputXml
  */
-async function processDataDictionary(dataDictionaryPath) {
-  const data = await parseXMLFile(dataDictionaryPath);
+async function processDataDictionary(inputXml) {
+  const data = await parseXMLFile(inputXml);
 
   if (!data.UC || !data.UC.Usecase) {
     throw new Error("Invalid structure: UC/Usecase not found");
@@ -36,7 +39,7 @@ async function processDataDictionary(dataDictionaryPath) {
 
   inputs.forEach(input => {
     const varName = input.Varname;
-    const scale   = input.Scale;    // reading <Scale> instead of <Type>
+    const scale   = input.Scale; // reading <Scale> instead of <Type>
     inputsMeta.push({ varName, type: scale });
 
     const conds = Array.isArray(input.Condition)
@@ -74,7 +77,7 @@ async function processDataDictionary(dataDictionaryPath) {
 
   const outputMeta = {
     varName: output.Varname,
-    type:    output.Scale   // reading <Scale> instead of <Type>
+    type:    output.Scale
   };
 
   const rawActs = Array.isArray(output.Action)
@@ -95,12 +98,19 @@ async function processDataDictionary(dataDictionaryPath) {
   };
 }
 
-/** DecisionTree parser unchanged */
-async function processDecisionTree(decisionTreePath) {
-  const data = await parseXMLFile(decisionTreePath);
+/**
+ * Reads a DecisionTree XML (filepath or Buffer)
+ * and returns an array of Decision nodes.
+ *
+ * @param {string|Buffer} inputXml
+ */
+async function processDecisionTree(inputXml) {
+  const data = await parseXMLFile(inputXml);
+
   if (!data.DecisionTree || !data.DecisionTree.DecisionS) {
     throw new Error("Invalid structure in DecisionTree XML.");
   }
+
   const dec = data.DecisionTree.DecisionS.Decision;
   return Array.isArray(dec) ? dec : [dec];
 }
