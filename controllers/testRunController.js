@@ -14,6 +14,7 @@ exports.createTestRun = async (req, res) => {
     // grab original filenames for metadata
     const ddName = req.files.dataDictionary[0].originalname;
     const dtName = req.files.decisionTree[0].originalname;
+    const stName = req.files.stateMachine?.[0]?.originalname || null;
 
     // 2) generate everything
     const {
@@ -33,9 +34,10 @@ exports.createTestRun = async (req, res) => {
 
     // 3) persist to Mongo
     const run = await TestRun.create({
-      user: req.user.id,
-      dataDictionaryFilename: ddName,
-      decisionTreeFilename:   dtName,
+      user:                    req.user.id,
+      dataDictionaryFilename:  ddName,
+      decisionTreeFilename:    dtName,
+      stateTransitionFilename: stName,
       partitions,
       testCases,
       syntaxResults,
@@ -46,23 +48,38 @@ exports.createTestRun = async (req, res) => {
       combinedCsvData
     });
 
-    // 4) return metadata + URLs
+    // build GoJS model data for immediate diagram rendering
+    const stateSet = new Set();
+    stateTests.forEach(tc => {
+      stateSet.add(tc.startState);
+      stateSet.add(tc.expectedState);
+    });
+    const nodes = Array.from(stateSet).map(key => ({ key }));
+    const links = stateValid.map(tc => ({
+      from: tc.startState,
+      to:   tc.expectedState,
+      text: tc.event
+    }));
+
+    // 4) return metadata + URLs + diagram data
     const base = `${req.protocol}://${req.get('host')}/api/runs/${run._id}`;
     const stateValidArr   = stateTests.filter(tc => tc.type === 'Valid');
     const stateInvalidArr = stateTests.filter(tc => tc.type === 'Invalid');
 
     return res.json({
-      success:       true,
-      runId:         run._id,
+      success:        true,
+      runId:          run._id,
       partitions,
       testCases,
       syntaxResults,
-      stateValid:    stateValidArr,
-      stateInvalid:  stateInvalidArr,
-      ecpCsvUrl:     `${base}/ecp-csv`,
-      syntaxCsvUrl:  `${base}/syntax-csv`,
-      stateCsvUrl:   `${base}/state-csv`,
-      combinedCsvUrl:`${base}/csv`
+      stateValid:     stateValidArr,
+      stateInvalid:   stateInvalidArr,
+      nodes,
+      links,
+      ecpCsvUrl:      `${base}/ecp-csv`,
+      syntaxCsvUrl:   `${base}/syntax-csv`,
+      stateCsvUrl:    `${base}/state-csv`,
+      combinedCsvUrl: `${base}/csv`
     });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
@@ -74,43 +91,73 @@ exports.listTestRuns = async (req, res) => {
   try {
     const runs = await TestRun.find({ user: req.user.id })
       .sort({ createdAt: -1 })
-      .select('_id dataDictionaryFilename decisionTreeFilename createdAt');
+      .select('_id dataDictionaryFilename decisionTreeFilename stateTransitionFilename createdAt');
     return res.json({ success: true, runs });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }
 };
 
+
+
 // GET /api/runs/:id
 exports.getTestRun = async (req, res) => {
   try {
-    const run = await TestRun.findOne({ _id: req.params.id, user: req.user.id });
+    // Fetch the run as a plain object
+    const run = await TestRun.findOne({
+      _id: req.params.id,
+      user: req.user.id
+    }).lean();
+
     if (!run) {
       return res.status(404).json({ success: false, error: 'Not found' });
     }
 
-    // split stored stateTests into valid and invalid for response
-    const stateValidArr   = run.stateTests.filter(tc => tc.type === 'Valid');
-    const stateInvalidArr = run.stateTests.filter(tc => tc.type === 'Invalid');
+    // 1) Split stateTests into valid/invalid
+    const stateTests   = run.stateTests || [];
 
+    const stateValid   = stateTests.filter(tc => tc.type === 'Valid');
+
+    // 2) Build nodes & links
+    const stateSet = new Set();
+    stateTests.forEach(tc => {
+      stateSet.add(tc.startState);
+      stateSet.add(tc.expectedState);
+    });
+    const nodes = Array.from(stateSet).map(key => ({ key }));
+    const links = stateValid.map(tc => ({
+      from: tc.startState,
+      to:   tc.expectedState,
+      text: tc.event
+    }));
+
+    // 3) Return everything, including nodes & links
     const base = `${req.protocol}://${req.get('host')}/api/runs/${run._id}`;
     return res.json({
-      success:       true,
-      partitions:    run.partitions,
-      testCases:     run.testCases,
-      syntaxResults: run.syntaxResults,
-      stateTests:    run.stateTests,
-      stateValid:    stateValidArr,
-      stateInvalid:  stateInvalidArr,
-      ecpCsvUrl:     `${base}/ecp-csv`,
-      syntaxCsvUrl:  `${base}/syntax-csv`,
-      stateCsvUrl:   `${base}/state-csv`,
-      combinedCsvUrl:`${base}/csv`
+      success:        true,
+      dataDictionaryFilename:  run.dataDictionaryFilename,
+      decisionTreeFilename:    run.decisionTreeFilename,
+      stateTransitionFilename: run.stateTransitionFilename,
+      partitions:     run.partitions,
+      testCases:      run.testCases,
+      syntaxResults:  run.syntaxResults,
+      stateTests:     stateTests,
+      stateValid:     stateValid,
+      stateInvalid:   stateTests.filter(tc => tc.type === 'Invalid'),
+      nodes,
+      links,
+      ecpCsvUrl:      `${base}/ecp-csv`,
+      syntaxCsvUrl:   `${base}/syntax-csv`,
+      stateCsvUrl:    `${base}/state-csv`,
+      combinedCsvUrl: `${base}/csv`
     });
   } catch (err) {
+    console.error(err);
     return res.status(500).json({ success: false, error: err.message });
   }
 };
+
+
 
 // GET /api/runs/:id/ecp-csv
 exports.downloadEcpCsv = async (req, res) => {
@@ -158,14 +205,14 @@ exports.downloadCombined = async (req, res) => {
     if (!run) return res.status(404).send('Not found');
 
     // split stored stateTests into valid and invalid
-    const stateValid   = run.stateTests.filter(tc => tc.type === 'Valid');
+    const stateValid = run.stateTests.filter(tc => tc.type === 'Valid');
     const stateInvalid = run.stateTests.filter(tc => tc.type === 'Invalid');
 
     const wb = new ExcelJS.Workbook();
 
     // ECP sheet
     const ecpSheet = wb.addWorksheet('ECP Test Cases');
-    const ecpInputKeys    = run.testCases.length ? Object.keys(run.testCases[0].inputs) : [];
+    const ecpInputKeys = run.testCases.length ? Object.keys(run.testCases[0].inputs) : [];
     const ecpExpectedKeys = run.testCases.length ? Object.keys(run.testCases[0].expected) : [];
     ecpSheet.columns = [
       { header: 'Test Case ID', key: 'testCaseID' },
@@ -191,12 +238,12 @@ exports.downloadCombined = async (req, res) => {
     ];
     run.syntaxResults.forEach(sr => {
       syntaxSheet.addRow({
-        name:               sr.name,
-        valid:              sr.testCases.valid,
-        invalidValue:       sr.testCases.invalidValue,
-        invalidOmission:    sr.testCases.invalidOmission,
-        invalidAddition:    sr.testCases.invalidAddition,
-        invalidSubstitution:sr.testCases.invalidSubstitution
+        name: sr.name,
+        valid: sr.testCases.valid,
+        invalidValue: sr.testCases.invalidValue,
+        invalidOmission: sr.testCases.invalidOmission,
+        invalidAddition: sr.testCases.invalidAddition,
+        invalidSubstitution: sr.testCases.invalidSubstitution
       });
     });
 
@@ -211,19 +258,19 @@ exports.downloadCombined = async (req, res) => {
     ];
     stateValid.forEach(tc => {
       stateSheet.addRow({
-        type:          'Valid',
-        testCaseID:    tc.testCaseID,
-        startState:    tc.startState,
-        event:         tc.event,
+        type: 'Valid',
+        testCaseID: tc.testCaseID,
+        startState: tc.startState,
+        event: tc.event,
         expectedState: tc.expectedState
       });
     });
     stateInvalid.forEach(tc => {
       stateSheet.addRow({
-        type:          'Invalid',
-        testCaseID:    tc.testCaseID,
-        startState:    tc.startState,
-        event:         tc.event,
+        type: 'Invalid',
+        testCaseID: tc.testCaseID,
+        startState: tc.startState,
+        event: tc.event,
         expectedState: tc.expectedState
       });
     });

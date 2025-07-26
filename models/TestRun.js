@@ -45,6 +45,7 @@ const TestRunSchema = new Schema({
   createdAt:              { type: Date, default: Date.now },
   dataDictionaryFilename: String,
   decisionTreeFilename:   String,
+  stateTransitionFilename:   { type: String, default: null },
   partitions:             [PartitionSchema],
   testCases:              [TestCaseSchema],
   syntaxResults:          [SyntaxSchema],
