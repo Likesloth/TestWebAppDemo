@@ -1,21 +1,21 @@
 // controllers/testRunController.js
-const ExcelJS = require('exceljs')
-const TestRun = require('../models/TestRun')
-const { generateAll } = require('./testGenController')
+const ExcelJS = require('exceljs');
+const TestRun = require('../models/TestRun');
+const { generateAll } = require('./testGenController');
 
 // POST /api/runs
 exports.createTestRun = async (req, res) => {
   try {
     // 1) grab buffers from multer.memoryStorage()
-    const ddBuffer = req.files.dataDictionary[0].buffer;       // was .path
-    const dtBuffer = req.files.decisionTree[0].buffer;         // was .path
-    const smBuffer = req.files.stateMachine?.[0]?.buffer;      // optional
+    const ddBuffer = req.files.dataDictionary[0].buffer;
+    const dtBuffer = req.files.decisionTree[0].buffer;
+    const smBuffer = req.files.stateMachine?.[0]?.buffer; // optional
 
     // grab original filenames for metadata
-    const ddName = req.files.dataDictionary[0].originalname;   // new
-    const dtName = req.files.decisionTree[0].originalname;     // new
+    const ddName = req.files.dataDictionary[0].originalname;
+    const dtName = req.files.decisionTree[0].originalname;
 
-    // 2) generate everything, passing buffers instead of file paths
+    // 2) generate everything
     const {
       partitions,
       testCases,
@@ -28,7 +28,10 @@ exports.createTestRun = async (req, res) => {
       combinedCsvData
     } = await generateAll(ddBuffer, dtBuffer, smBuffer);
 
-    // 3) persist to Mongo, using originalname fields
+    // combine valid + invalid into one array for persistence
+    const stateTests = [...stateValid, ...stateInvalid];
+
+    // 3) persist to Mongo
     const run = await TestRun.create({
       user: req.user.id,
       dataDictionaryFilename: ddName,
@@ -36,8 +39,7 @@ exports.createTestRun = async (req, res) => {
       partitions,
       testCases,
       syntaxResults,
-      stateValid,
-      stateInvalid,
+      stateTests,
       ecpCsvData,
       syntaxCsvData,
       stateCsvData,
@@ -46,17 +48,20 @@ exports.createTestRun = async (req, res) => {
 
     // 4) return metadata + URLs
     const base = `${req.protocol}://${req.get('host')}/api/runs/${run._id}`;
+    const stateValidArr   = stateTests.filter(tc => tc.type === 'Valid');
+    const stateInvalidArr = stateTests.filter(tc => tc.type === 'Invalid');
+
     return res.json({
-      success:      true,
-      runId:        run._id,
+      success:       true,
+      runId:         run._id,
       partitions,
       testCases,
       syntaxResults,
-      stateValid,
-      stateInvalid,
-      ecpCsvUrl:    `${base}/ecp-csv`,
-      syntaxCsvUrl: `${base}/syntax-csv`,
-      stateCsvUrl:  `${base}/state-csv`,
+      stateValid:    stateValidArr,
+      stateInvalid:  stateInvalidArr,
+      ecpCsvUrl:     `${base}/ecp-csv`,
+      syntaxCsvUrl:  `${base}/syntax-csv`,
+      stateCsvUrl:   `${base}/state-csv`,
       combinedCsvUrl:`${base}/csv`
     });
   } catch (err) {
@@ -80,18 +85,26 @@ exports.listTestRuns = async (req, res) => {
 exports.getTestRun = async (req, res) => {
   try {
     const run = await TestRun.findOne({ _id: req.params.id, user: req.user.id });
-    if (!run) return res.status(404).json({ success: false, error: 'Not found' });
+    if (!run) {
+      return res.status(404).json({ success: false, error: 'Not found' });
+    }
+
+    // split stored stateTests into valid and invalid for response
+    const stateValidArr   = run.stateTests.filter(tc => tc.type === 'Valid');
+    const stateInvalidArr = run.stateTests.filter(tc => tc.type === 'Invalid');
 
     const base = `${req.protocol}://${req.get('host')}/api/runs/${run._id}`;
     return res.json({
-      success:      true,
-      partitions:   run.partitions,
-      testCases:    run.testCases,
-      syntaxResults:run.syntaxResults,
-      stateTests:   run.stateTests,
-      ecpCsvUrl:    `${base}/ecp-csv`,
-      syntaxCsvUrl: `${base}/syntax-csv`,
-      stateCsvUrl:  `${base}/state-csv`,
+      success:       true,
+      partitions:    run.partitions,
+      testCases:     run.testCases,
+      syntaxResults: run.syntaxResults,
+      stateTests:    run.stateTests,
+      stateValid:    stateValidArr,
+      stateInvalid:  stateInvalidArr,
+      ecpCsvUrl:     `${base}/ecp-csv`,
+      syntaxCsvUrl:  `${base}/syntax-csv`,
+      stateCsvUrl:   `${base}/state-csv`,
       combinedCsvUrl:`${base}/csv`
     });
   } catch (err) {
@@ -111,7 +124,6 @@ exports.downloadEcpCsv = async (req, res) => {
     res.status(500).send('Server error');
   }
 };
-
 
 // GET /api/runs/:id/syntax-csv
 exports.downloadSyntaxCsv = async (req, res) => {
@@ -139,12 +151,15 @@ exports.downloadStateCsv = async (req, res) => {
   }
 };
 
-
-// GET /api/runs/:id/csv  → combined Excel workbook
+// GET /api/runs/:id/csv → combined Excel workbook
 exports.downloadCombined = async (req, res) => {
   try {
     const run = await TestRun.findById(req.params.id).lean();
     if (!run) return res.status(404).send('Not found');
+
+    // split stored stateTests into valid and invalid
+    const stateValid   = run.stateTests.filter(tc => tc.type === 'Valid');
+    const stateInvalid = run.stateTests.filter(tc => tc.type === 'Invalid');
 
     const wb = new ExcelJS.Workbook();
 
@@ -176,25 +191,25 @@ exports.downloadCombined = async (req, res) => {
     ];
     run.syntaxResults.forEach(sr => {
       syntaxSheet.addRow({
-        name:             sr.name,
-        valid:            sr.testCases.valid,
-        invalidValue:     sr.testCases.invalidValue,
-        invalidOmission:  sr.testCases.invalidOmission,
-        invalidAddition:  sr.testCases.invalidAddition,
-        invalidSubstitution: sr.testCases.invalidSubstitution
+        name:               sr.name,
+        valid:              sr.testCases.valid,
+        invalidValue:       sr.testCases.invalidValue,
+        invalidOmission:    sr.testCases.invalidOmission,
+        invalidAddition:    sr.testCases.invalidAddition,
+        invalidSubstitution:sr.testCases.invalidSubstitution
       });
     });
 
     // State sheet
     const stateSheet = wb.addWorksheet('State Test Cases');
     stateSheet.columns = [
-      { header: 'Type',          key: 'type' },
-      { header: 'Test Case ID',  key: 'testCaseID' },
-      { header: 'Start State',   key: 'startState' },
-      { header: 'Event',         key: 'event' },
-      { header: 'Expected State',key: 'expectedState' }
+      { header: 'Type', key: 'type' },
+      { header: 'Test Case ID', key: 'testCaseID' },
+      { header: 'Start State', key: 'startState' },
+      { header: 'Event', key: 'event' },
+      { header: 'Expected State', key: 'expectedState' }
     ];
-    run.stateValid.forEach(tc => {
+    stateValid.forEach(tc => {
       stateSheet.addRow({
         type:          'Valid',
         testCaseID:    tc.testCaseID,
@@ -203,24 +218,21 @@ exports.downloadCombined = async (req, res) => {
         expectedState: tc.expectedState
       });
     });
-    run.stateInvalid.forEach(tc => {
+    stateInvalid.forEach(tc => {
       stateSheet.addRow({
         type:          'Invalid',
         testCaseID:    tc.testCaseID,
         startState:    tc.startState,
         event:         tc.event,
-        expectedState: '<no transition>'
+        expectedState: tc.expectedState
       });
     });
 
-    res.setHeader(
-      'Content-Type',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    );
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="testRun-${run._id}.xlsx"`
-    );
+    // stream workbook
+    res.setHeader('Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition',
+      `attachment; filename="testRun-${run._id}.xlsx"`);
     await wb.xlsx.write(res);
     res.end();
   } catch (err) {

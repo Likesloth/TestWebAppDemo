@@ -9,6 +9,7 @@
  * @returns {{ valid: Array, invalid: Array }}
  */
 function generateStateTests({ states, events, transitions }) {
+  
   // 1) Build maps:
   //    • transitionMap: for exact valid transitions
   //    • eventToTargetMap: for any occurrence of an event → target
