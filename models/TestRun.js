@@ -34,6 +34,11 @@ const StateTestSchema = new Schema({
   type:          { type: String, enum: ['Valid','Invalid'], required: true }
 }, { _id: false });
 
+const SequenceSchema = new Schema({
+  seqCaseID: String,
+  sequence: [String]
+}, { _id: false });
+
 const TestCaseSchema = new Schema({
   testCaseID: { type: String, required: true },
   inputs:     { type: Map, of: Schema.Types.Mixed, required: true },
@@ -57,11 +62,21 @@ const TestRunSchema = new Schema({
     default: []
   },
 
+    // NEW: store generated state sequences
+  stateSequences: {
+    type:     [SequenceSchema],
+    required: false,
+    default:  []
+  },
+
   ecpCsvData:      { type: String, required: true },
   syntaxCsvData:   { type: String, required: true },
 
   // make stateCsvData optional with default empty string
   stateCsvData:    { type: String, required: false, default: '' },
+
+  // NEW: CSV for state sequences
+  stateSeqCsvData: { type: String, required: false, default: '' },
 
   combinedCsvData: { type: String, required: true }
 });
