@@ -74,9 +74,10 @@ if (stateMachinePath) {
   // --- ECP CSV ---
   const ecpInputKeys = testCases.length ? Object.keys(testCases[0].inputs) : [];
   const ecpExpectedKeys = testCases.length ? Object.keys(testCases[0].expected) : [];
-  const ecpHeader = ['Test Case ID', ...ecpInputKeys, ...ecpExpectedKeys];
+  const ecpHeader = ['Test Case ID', 'Type', ...ecpInputKeys, ...ecpExpectedKeys];
   const ecpRows = testCases.map(tc => [
     tc.testCaseID,
+    tc.type || 'Valid',
     ...ecpInputKeys.map(k => tc.inputs[k]),
     ...ecpExpectedKeys.map(k => tc.expected[k])
   ]);

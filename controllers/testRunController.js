@@ -274,11 +274,12 @@ exports.downloadCombined = async (req, res) => {
     const ecpExpectedKeys = run.testCases.length ? Object.keys(run.testCases[0].expected) : [];
     ecpSheet.columns = [
       { header: 'Test Case ID', key: 'testCaseID' },
+      { header: 'Type', key: 'type' },
       ...ecpInputKeys.map(k => ({ header: k, key: k })),
       ...ecpExpectedKeys.map(k => ({ header: k, key: `exp_${k}` }))
     ];
     run.testCases.forEach(tc => {
-      const row = { testCaseID: tc.testCaseID };
+      const row = { testCaseID: tc.testCaseID, type: tc.type || 'Valid' };
       ecpInputKeys.forEach(k => row[k] = tc.inputs[k]);
       ecpExpectedKeys.forEach(k => row[`exp_${k}`] = tc.expected[k]);
       ecpSheet.addRow(row);

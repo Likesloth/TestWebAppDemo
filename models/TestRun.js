@@ -41,6 +41,7 @@ const SequenceSchema = new Schema({
 
 const TestCaseSchema = new Schema({
   testCaseID: { type: String, required: true },
+  type:      { type: String, enum: ['Valid','Invalid'], required: false },
   inputs:     { type: Map, of: Schema.Types.Mixed, required: true },
   expected:   { type: Map, of: Schema.Types.Mixed, required: true }
 }, { _id: false });

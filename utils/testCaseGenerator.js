@@ -66,16 +66,81 @@ module.exports = async function generateTestCasesLogic(dataDictionaryPath, decis
     if (valid) {
       testCases.push({
         testCaseID: `TC${String(idx + 1).padStart(3, '0')}`,
+        type: 'Valid',
         inputs,
         expected
       });
     }
   });
-// log data
-  // console.log(
-  //   "🔍 testCases from generateTestCasesLogic:",
-  //   JSON.stringify(testCases, null, 2)
-  // );
+  
+  // --- Add invalid/out-of-range partition cases (ECP negative tests) ---
+  // Build a typical (baseline) input map so we can vary one input at a time
+  const baselineInputs = {};
+  for (const { varName, type } of inputsMeta) {
+    if (type === 'Range') {
+      // choose the mid of the smallest-range bucket for determinism
+      const buckets = rangeConditions
+        .filter(r => r.varName === varName)
+        .sort((a, b) => a.min - b.min);
+      baselineInputs[varName] = buckets.length ? buckets[0].mid : null;
+    } else if (type === 'Nominal' || type === 'Ordinal') {
+      const cats = typeConditions.filter(t => t.varName === varName);
+      baselineInputs[varName] = cats.length ? cats[0].label : null;
+    } else {
+      baselineInputs[varName] = null;
+    }
+  }
+  
+  // Helper to clone baseline then override
+  function withOverride(name, value) {
+    const obj = { ...baselineInputs };
+    obj[name] = value;
+    return obj;
+  }
+  
+  // Determine next ID index
+  let nextIndex = testCases.length + 1;
+  const outVar = outputMeta?.varName;
+  const mkExpected = (varName) => (outVar ? { [outVar]: `Invalid ${varName}` } : {});
+  
+  // Generate invalid cases per input
+  for (const { varName, type } of inputsMeta) {
+    if (type === 'Range') {
+      const ranges = rangeConditions
+        .filter(r => r.varName === varName)
+        .sort((a, b) => a.min - b.min);
+      if (ranges.length) {
+        const globalMin = ranges[0].min;
+        const globalMax = ranges[ranges.length - 1].max;
+        const underflow = Number.isFinite(globalMin) ? globalMin - 1 : null;
+        const overflow  = Number.isFinite(globalMax) ? globalMax + 1 : null;
+        if (underflow !== null) {
+          testCases.push({
+            testCaseID: `TC${String(nextIndex++).padStart(3, '0')}`,
+            type: 'Invalid',
+            inputs: withOverride(varName, underflow),
+            expected: mkExpected(varName)
+          });
+        }
+        if (overflow !== null) {
+          testCases.push({
+            testCaseID: `TC${String(nextIndex++).padStart(3, '0')}`,
+            type: 'Invalid',
+            inputs: withOverride(varName, overflow),
+            expected: mkExpected(varName)
+          });
+        }
+      }
+    } else if (type === 'Nominal' || type === 'Ordinal') {
+      // Only include the None/null invalid case
+      testCases.push({
+        testCaseID: `TC${String(nextIndex++).padStart(3, '0')}`,
+        type: 'Invalid',
+        inputs: withOverride(varName, null),
+        expected: mkExpected(varName)
+      });
+    }
+  }
 
   return testCases;
 };
