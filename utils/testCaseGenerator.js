@@ -13,6 +13,11 @@ module.exports = async function generateTestCasesLogic(dataDictionaryPath, decis
     actions          // [{ id, value }, …]
   } = await processDataDictionary(dataDictionaryPath);
 
+  // Only consider inputs that actually participate in ECP via <Condition>
+  const ecpRangeVars = new Set(rangeConditions.map(r => r.varName));
+  const ecpNomVars   = new Set(typeConditions.map(t => t.varName));
+  const ecpVarSet    = new Set([...ecpRangeVars, ...ecpNomVars]);
+
   const decisions = await processDecisionTree(decisionTreePath);
   const testCases = [];
 
@@ -74,9 +79,9 @@ module.exports = async function generateTestCasesLogic(dataDictionaryPath, decis
   });
   
   // --- Add invalid/out-of-range partition cases (ECP negative tests) ---
-  // Build a typical (baseline) input map so we can vary one input at a time
+  // Build a typical (baseline) input map (only for vars that have <Condition>)
   const baselineInputs = {};
-  for (const { varName, type } of inputsMeta) {
+  for (const { varName, type } of inputsMeta.filter(i => ecpVarSet.has(i.varName))) {
     if (type === 'Range') {
       // choose the mid of the smallest-range bucket for determinism
       const buckets = rangeConditions
@@ -103,8 +108,8 @@ module.exports = async function generateTestCasesLogic(dataDictionaryPath, decis
   const outVar = outputMeta?.varName;
   const mkExpected = (varName) => (outVar ? { [outVar]: `Invalid ${varName}` } : {});
   
-  // Generate invalid cases per input
-  for (const { varName, type } of inputsMeta) {
+  // Generate invalid cases per input (only those with <Condition>)
+  for (const { varName, type } of inputsMeta.filter(i => ecpVarSet.has(i.varName))) {
     if (type === 'Range') {
       const ranges = rangeConditions
         .filter(r => r.varName === varName)
@@ -132,7 +137,9 @@ module.exports = async function generateTestCasesLogic(dataDictionaryPath, decis
         }
       }
     } else if (type === 'Nominal' || type === 'Ordinal') {
-      // Only include the None/null invalid case
+      // Only include the None/null invalid case for variables that have categories
+      const cats = typeConditions.filter(t => t.varName === varName);
+      if (!cats.length) continue;
       testCases.push({
         testCaseID: `TC${String(nextIndex++).padStart(3, '0')}`,
         type: 'Invalid',
