@@ -33,7 +33,7 @@ function generateStateTests({ states, events, transitions }) {
   let vCount = 1;
   transitions.forEach(({ from, event, to }) => {
     valid.push({
-      testCaseID:    `STV${String(vCount++).padStart(3, '0')}`,
+      testCaseID:    `TC${String(vCount++).padStart(3, '0')}`,
       startState:    from,
       event,
       expectedState: to,
@@ -48,7 +48,7 @@ function generateStateTests({ states, events, transitions }) {
       const key = `${state}::${event}`;
       if (!transitionMap[key]) {
         invalid.push({
-          testCaseID:    `STI${String(iCount++).padStart(3, '0')}`,
+          testCaseID:    `TC${String(iCount++).padStart(3, '0')}`,
           startState:    state,
           event,
           // lookup in the broader event→target map
