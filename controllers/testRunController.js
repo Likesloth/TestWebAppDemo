@@ -11,19 +11,18 @@ exports.createTestRun = async (req, res) => {
     const dtBuffer = req.files.decisionTree[0].buffer;
     const smBuffer = req.files.stateMachine?.[0]?.buffer; // optional
 
-    // grab original filenames for metadata
+    // original filenames for metadata
     const ddName = req.files.dataDictionary[0].originalname;
     const dtName = req.files.decisionTree[0].originalname;
     const stName = req.files.stateMachine?.[0]?.originalname || null;
 
-    // 2) generate everything
+    // 2) generate everything (✅ use stateTests/stateSequences)
     const {
       partitions,
       testCases,
       syntaxResults,
-      stateValid,
-      stateInvalid,
-      stateSequences,
+      stateTests,        // ✅ new single array of 5-col rows
+      stateSequences,    // ✅ sequences
       ecpCsvData,
       syntaxCsvData,
       stateCsvData,
@@ -31,10 +30,7 @@ exports.createTestRun = async (req, res) => {
       combinedCsvData
     } = await generateAll(ddBuffer, dtBuffer, smBuffer);
 
-    // combine valid + invalid into one array for persistence
-    const stateTests = [...stateValid, ...stateInvalid];
-
-    // 3) persist to Mongo
+    // 3) persist to Mongo (✅ store stateTests directly)
     const run = await TestRun.create({
       user: req.user.id,
       dataDictionaryFilename: ddName,
@@ -52,31 +48,34 @@ exports.createTestRun = async (req, res) => {
       combinedCsvData
     });
 
-    // build GoJS model data for immediate diagram rendering
+    // Build GoJS model data
     const stateSet = new Set();
-    stateTests.forEach(tc => {
+    (stateTests || []).forEach(tc => {
       stateSet.add(tc.startState);
       stateSet.add(tc.expectedState);
     });
     const nodes = Array.from(stateSet).map(key => ({ key }));
-    const links = stateValid.map(tc => ({
+
+    // Only draw links for valid singles (no event label in new schema)
+    const stateValidArr = (stateTests || []).filter(t => t.type === 'Valid');
+    const stateInvalidArr = (stateTests || []).filter(t => t.type === 'Invalid');
+
+    const links = stateValidArr.map(tc => ({
       from: tc.startState,
       to: tc.expectedState,
-      text: tc.event
+      text: '' // no event in 5-col schema
     }));
 
-    // 4) return metadata + URLs + diagram data
+    // 5) return metadata + URLs + diagram data
     const base = `${req.protocol}://${req.get('host')}/api/runs/${run._id}`;
-    const stateValidArr = stateTests.filter(tc => tc.type === 'Valid');
-    const stateInvalidArr = stateTests.filter(tc => tc.type === 'Invalid');
-
     return res.json({
       success: true,
       runId: run._id,
       partitions,
       testCases,
       syntaxResults,
-      stateValid: stateValidArr,
+      stateTests,                 // ✅ primary
+      stateValid: stateValidArr,  // optional compatibility
       stateInvalid: stateInvalidArr,
       stateSequences,
       nodes,
@@ -84,12 +83,15 @@ exports.createTestRun = async (req, res) => {
       ecpCsvUrl: `${base}/ecp-csv`,
       syntaxCsvUrl: `${base}/syntax-csv`,
       stateCsvUrl: `${base}/state-csv`,
+      // if you expose a separate sequences CSV endpoint, add it here:
+      // stateSeqCsvUrl: `${base}/state-seq-csv`,
       combinedCsvUrl: `${base}/csv`
     });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }
 };
+
 
 // GET /api/runs
 exports.listTestRuns = async (req, res) => {
@@ -118,25 +120,39 @@ exports.getTestRun = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Not found' });
     }
 
-    // 1) Split stateTests into valid/invalid
+    // Unified accessor (handles new rows with transitionDescription and old rows with startState/expectedState)
     const stateTests = run.stateTests || [];
 
-    const stateValid = stateTests.filter(tc => tc.type === 'Valid');
+    // Helper to extract from/to for any row
+    const parseFromTo = (row) => {
+      if (row.transitionDescription && row.transitionDescription.includes('-->')) {
+        const [from, to] = row.transitionDescription.split('-->').map(s => s.trim());
+        return { from, to };
+      }
+      // Fallback (older data)
+      const from = (row.startState || '').trim();
+      const to = (row.expectedState || '').trim();
+      return { from, to };
+    };
 
-    // 2) Build nodes & links
-    const stateSet = new Set();
-    stateTests.forEach(tc => {
-      stateSet.add(tc.startState);
-      stateSet.add(tc.expectedState);
+    // Build nodes & links from VALID rows only
+    const stateValidArr = stateTests.filter(t => t.type === 'Valid');
+    const stateInvalidArr = stateTests.filter(t => t.type === 'Invalid');
+
+    const nodeSet = new Set();
+    stateTests.forEach(t => {
+      const { from, to } = parseFromTo(t);
+      if (from) nodeSet.add(from);
+      if (to) nodeSet.add(to);
     });
-    const nodes = Array.from(stateSet).map(key => ({ key }));
-    const links = stateValid.map(tc => ({
-      from: tc.startState,
-      to: tc.expectedState,
-      text: tc.event
-    }));
+    const nodes = Array.from(nodeSet).map(key => ({ key }));
 
-    // 3) Return everything, including nodes & links
+    const links = stateValidArr.map(t => {
+      const { from, to } = parseFromTo(t);
+      return { from, to, text: '' }; // no event in the new matrix shape
+    });
+
+    // Respond
     const base = `${req.protocol}://${req.get('host')}/api/runs/${run._id}`;
     return res.json({
       success: true,
@@ -146,12 +162,18 @@ exports.getTestRun = async (req, res) => {
       partitions: run.partitions,
       testCases: run.testCases,
       syntaxResults: run.syntaxResults,
-      stateTests: stateTests,
-      stateValid: stateValid,
-      stateInvalid: stateTests.filter(tc => tc.type === 'Invalid'),
+
+      // New primary arrays
+      stateTests,              // merged single-transition rows (Valid + Invalid)
+      stateValid: stateValidArr,
+      stateInvalid: stateInvalidArr,
       stateSequences: run.stateSequences || [],
+
+      // Diagram data
       nodes,
       links,
+
+      // Download URLs
       ecpCsvUrl: `${base}/ecp-csv`,
       syntaxCsvUrl: `${base}/syntax-csv`,
       stateCsvUrl: `${base}/state-csv`,
@@ -202,29 +224,48 @@ exports.downloadStateCsv = async (req, res) => {
     // ---- Sheet 1: Single-Step State Tests ----
     const stateSingleSheet = wb.addWorksheet('State Single-Step');
     stateSingleSheet.columns = [
-      { header: 'Test Case ID',   key: 'testCaseID' },
-      { header: 'Type',           key: 'type' },
-      { header: 'Start State',    key: 'startState' },
-      { header: 'Event',          key: 'event' },
+      { header: 'Test Case ID', key: 'testCaseID' },
+      { header: 'Type', key: 'type' },
+      { header: 'Start State', key: 'startState' },
+      { header: 'Transition Description', key: 'transitionDescription' },
       { header: 'Expected State', key: 'expectedState' }
     ];
 
-    const stateTests   = (run.stateTests || []);
-    const stateValid   = stateTests.filter(tc => tc.type === 'Valid');
+    const stateTests = (run.stateTests || []);
+    const stateValid = stateTests.filter(tc => tc.type === 'Valid');
     const stateInvalid = stateTests.filter(tc => tc.type === 'Invalid');
 
+    const attemptDest = (tc) => tc.attemptedState || tc.expectedState || '';
+
     let counter = 1;
-    [...stateValid, ...stateInvalid].forEach(tc => {
-      const id = `TC${String(counter).padStart(3,'0')}`;
+
+    // Valid rows
+    stateValid.forEach(tc => {
+      const id = `TC${String(counter).padStart(3, '0')}`;
       stateSingleSheet.addRow({
+        type: 'Valid',
         testCaseID: id,
-        type: tc.type,
         startState: tc.startState,
-        event: tc.event,
+        transitionDescription: tc.transitionDescription || `${tc.startState} --> ${tc.expectedState}`,
         expectedState: tc.expectedState
       });
       counter++;
     });
+
+    // Invalid rows (expected = attempted destination)
+    stateInvalid.forEach(tc => {
+      const id = `TC${String(counter).padStart(3, '0')}`;
+      const to = attemptDest(tc);
+      stateSingleSheet.addRow({
+        type: 'Invalid',
+        testCaseID: id,
+        startState: tc.startState,
+        transitionDescription: tc.transitionDescription || `${tc.startState} --> ${to}`,
+        expectedState: to
+      });
+      counter++;
+    });
+
 
     // ---- Sheet 2: Sequence State Tests ----
     const stateSeqSheet = wb.addWorksheet('State Sequences');
@@ -235,7 +276,7 @@ exports.downloadStateCsv = async (req, res) => {
 
     let seqCounter = 1;
     (run.stateSequences || []).forEach(s => {
-      const id = `TC${String(seqCounter).padStart(3,'0')}`;
+      const id = `TC${String(seqCounter).padStart(3, '0')}`;
       stateSeqSheet.addRow({
         testCaseID: id,
         sequence: Array.isArray(s.sequence) ? s.sequence.join(' → ') : ''
@@ -268,7 +309,7 @@ exports.downloadCombined = async (req, res) => {
 
     const wb = new ExcelJS.Workbook();
 
-// ECP sheet
+    // ECP sheet
     const ecpSheet = wb.addWorksheet('ECP Test Cases');
     const ecpInputKeys = run.testCases.length ? Object.keys(run.testCases[0].inputs) : [];
     const ecpExpectedKeys = run.testCases.length ? Object.keys(run.testCases[0].expected) : [];
@@ -309,29 +350,47 @@ exports.downloadCombined = async (req, res) => {
     // ---- State Single-Step sheet ----
     const stateSingleSheet = wb.addWorksheet('State Test Cases');
     stateSingleSheet.columns = [
-      { header: 'Test Case ID',   key: 'testCaseID' },
-      { header: 'Type',           key: 'type' },
-      { header: 'Start State',    key: 'startState' },
-      { header: 'Event',          key: 'event' },
+      { header: 'Test Case ID', key: 'testCaseID' },
+      { header: 'Type', key: 'type' },
+      { header: 'Start State', key: 'startState' },
+      { header: 'Transition Description', key: 'transitionDescription' },
       { header: 'Expected State', key: 'expectedState' }
     ];
 
-    const stateTests   = (run.stateTests || []);
-    const stateValid   = stateTests.filter(tc => tc.type === 'Valid');
+    const stateTests = (run.stateTests || []);
+    const stateValid = stateTests.filter(tc => tc.type === 'Valid');
     const stateInvalid = stateTests.filter(tc => tc.type === 'Invalid');
+    const attemptDest = (tc) => tc.attemptedState || tc.expectedState || '';
 
     let counter = 1;
-    [...stateValid, ...stateInvalid].forEach(tc => {
-      const id = `TC${String(counter).padStart(3,'0')}`;
+
+    // Valid rows
+    stateValid.forEach(tc => {
+      const id = `TC${String(counter).padStart(3, '0')}`;
       stateSingleSheet.addRow({
+        type: 'Valid',
         testCaseID: id,
-        type: tc.type,
         startState: tc.startState,
-        event: tc.event,
+        transitionDescription: tc.transitionDescription || `${tc.startState} --> ${tc.expectedState}`,
         expectedState: tc.expectedState
       });
       counter++;
     });
+
+    // Invalid rows
+    stateInvalid.forEach(tc => {
+      const id = `TC${String(counter).padStart(3, '0')}`;
+      const to = attemptDest(tc);
+      stateSingleSheet.addRow({
+        type: 'Invalid',
+        testCaseID: id,
+        startState: tc.startState,
+        transitionDescription: tc.transitionDescription || `${tc.startState} --> ${to}`,
+        expectedState: to
+      });
+      counter++;
+    });
+
 
     // ---- State Sequences sheet ----
     const stateSeqSheet = wb.addWorksheet('State Sequences');
@@ -342,7 +401,7 @@ exports.downloadCombined = async (req, res) => {
 
     let seqCounter = 1;
     (run.stateSequences || []).forEach(s => {
-      const id = `TC${String(seqCounter).padStart(3,'0')}`;
+      const id = `TC${String(seqCounter).padStart(3, '0')}`;
       stateSeqSheet.addRow({
         testCaseID: id,
         sequence: Array.isArray(s.sequence) ? s.sequence.join(' → ') : ''

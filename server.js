@@ -4,13 +4,10 @@ require('dotenv').config();
 const express  = require('express');
 const cors     = require('cors');
 const mongoose = require('mongoose');
-const path     = require('path');
-const upload   = require('./utils/upload');
 
-// Controllers / Routes
-const { generateAll } = require('./controllers/testGenController');
-const authRoutes      = require('./routes/auth');
-const testRunRoutes   = require('./routes/testRuns');
+// Routes
+const authRoutes    = require('./routes/auth');
+const testRunRoutes = require('./routes/testRuns');
 
 const app = express();
 
