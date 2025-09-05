@@ -1,5 +1,4 @@
 // controllers/testGenController.js
-
 const { stringify } = require('csv-stringify/sync');
 const path = require('path');
 
@@ -10,7 +9,6 @@ const { generateSyntaxTests } = require('../utils/syntaxTestGenerator');
 const { processStateDefs } = require('../utils/stateParser');
 const { generateStateTests } = require('../utils/stateTestGenerator');
 const { enumerateStateSequences } = require('../utils/stateSequenceGenerator');
-
 
 module.exports.generateAll = async (
   dataDictionaryPath,
@@ -25,51 +23,59 @@ module.exports.generateAll = async (
   const syntaxDefs = await processSyntaxDefs(dataDictionaryPath);
   const syntaxResults = generateSyntaxTests(syntaxDefs);
 
-// 3) State‐transition (optional)
-let valid = [];
-let invalid = [];
-let stateCsvData = '';
-let stateHeader = [];
-let stateRows = [];
-let stateSequences = [];
-let stateSeqCsvData = '';
+  // 3) State‐transition (optional)
+  let valid = [];
+  let invalid = [];
+  let stateCsvData = '';
+  let stateHeader = [];
+  let stateRows = [];
+  let stateSequences = [];
+  let stateSeqCsvData = '';
 
-if (stateMachinePath) {
-  // parse states and also get initialId for sequences
-  const { states, events, transitions, initialId } = await processStateDefs(stateMachinePath);
+  if (stateMachinePath) {
+    // parse states and also get initialId/finalIds for filters + sequences
+    const { states, events, transitions, initialId, finalIds } =
+      await processStateDefs(stateMachinePath);
 
-  // single-step valid/invalid generation
-  const results = generateStateTests({ states, events, transitions });
-  valid = results.valid;
-  invalid = results.invalid;
+    // single-step valid/invalid generation (with filters)
+    const results = generateStateTests({
+      states,
+      events,
+      transitions,
+      initialStates: initialId ? [initialId] : [],
+      finalStates: finalIds || []
+    });
+    valid = results.valid;
+    invalid = results.invalid;
 
-  // --- State CSV (single-step) ---
-  stateHeader = ['Type', 'Test Case ID', 'Start State', 'Event', 'Expected State'];
-  stateRows = [
-    ...valid.map(tc   => ['Valid',   tc.testCaseID, tc.startState, tc.event,   tc.expectedState]),
-    ...invalid.map(tc => ['Invalid', tc.testCaseID, tc.startState, tc.event,   tc.expectedState])
-  ];
-  stateCsvData = stringify([stateHeader, ...stateRows]);
+    // --- State CSV (single-step) ---
+    stateHeader = ['Type', 'Test Case ID', 'Start State', 'Event', 'Expected State'];
+    stateRows = [
+      ...valid.map(tc   => ['Valid',   tc.testCaseID, tc.startState, tc.event,   tc.expectedState]),
+      ...invalid.map(tc => ['Invalid', tc.testCaseID, tc.startState, tc.event,   tc.expectedState])
+    ];
+    stateCsvData = stringify([stateHeader, ...stateRows]);
 
-  // --- Sequences (prefix paths from initial; no events; not required to end at final) ---
-  if (!initialId) {
-    throw new Error('StateMachine XML has no <initial id="..."> node; cannot enumerate sequences.');
+    // --- Sequences (prefix paths from initial; no events)
+    if (!initialId) {
+      throw new Error('StateMachine XML has no <initial id="..."> node; cannot enumerate sequences.');
+    }
+
+    stateSequences = enumerateStateSequences({
+      initialId,
+      transitions,
+      maxDepth: 8,
+      // หาก enumerateStateSequences รองรับ finalIds ให้ส่งต่อด้วย:
+      finalIds
+    });
+
+    const seqHeader = ['Sequence Case ID', 'Sequence'];
+    const seqRows = stateSequences.map(s => [
+      s.seqCaseID,
+      s.sequence.join(' → ')
+    ]);
+    stateSeqCsvData = stringify([seqHeader, ...seqRows]);
   }
-
-  stateSequences = enumerateStateSequences({
-    initialId,
-    transitions,
-    maxDepth: 8
-  });
-
-  const seqHeader = ['Sequence Case ID', 'Sequence'];
-  const seqRows = stateSequences.map(s => [
-    s.seqCaseID,
-    s.sequence.join(' → ')
-  ]);
-  stateSeqCsvData = stringify([seqHeader, ...seqRows]);
-}
-
 
   // --- ECP CSV ---
   const ecpInputKeys = testCases.length ? Object.keys(testCases[0].inputs) : [];
@@ -95,7 +101,7 @@ if (stateMachinePath) {
   ]);
   const syntaxCsvData = stringify([synHeader, ...synRows]);
 
-  // 6) Combined CSV (kept as-is; not strictly needed for sequences-in-same-sheet Excel)
+  // 6) Combined CSV (kept as-is; includes sequences in one CSV table)
   const combinedHeader = ['Technique', ...ecpHeader, ...synHeader, 'Seq/State Type', 'ID', 'Start/Path', 'Event', 'Expected/Coverage'];
   const combinedRows = [
     ...ecpRows.map(r => ['ECP', ...r, ...Array(synHeader.length).fill(''), '', '', '', '', '']),

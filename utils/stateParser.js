@@ -46,11 +46,11 @@ async function processStateDefs(inputXml) {
     states.push(initialId);
   }
 
-  // tiny helper to map target="final" -> the only final id (if exactly one exists)
+  // map target="final" -> the only final id (if exactly one exists)
   const mapTarget = (to) => {
     if (!to) return to;
     const lower = String(to).toLowerCase();
-    if (finalIds.length === 1 && (lower === 'final')) {
+    if (finalIds.length === 1 && lower === 'final') {
       return finalIds[0];
     }
     return to;
