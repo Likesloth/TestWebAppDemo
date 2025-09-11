@@ -95,8 +95,26 @@ module.exports.generateAll = async (
     stateSequences = enumerateStateSequences({
       initialId,
       transitions,
+      finalIds,      // ensure generator knows terminal states
       maxDepth: 8
     });
+
+    // Filter: keep only sequences that end at a final state
+    if (finalIds && finalIds.length) {
+      const finalSet = new Set(finalIds);
+      stateSequences = stateSequences.filter(s => {
+        const last = Array.isArray(s.sequence) && s.sequence.length
+          ? s.sequence[s.sequence.length - 1]
+          : null;
+        return last && finalSet.has(last);
+      });
+
+      // Renumber seqCaseID to be contiguous after filtering
+      stateSequences = stateSequences.map((s, idx) => ({
+        ...s,
+        seqCaseID: `TC${String(idx + 1).padStart(3, '0')}`
+      }));
+    }
 
     // sequences CSV (with Coverage)
     const seqHeader = ['Test Case ID', 'Sequence', 'Coverage (%)'];
