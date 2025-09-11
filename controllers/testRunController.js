@@ -228,7 +228,8 @@ exports.downloadStateCsv = async (req, res) => {
       { header: 'Type', key: 'type' },
       { header: 'Start State', key: 'startState' },
       { header: 'Transition Description', key: 'transitionDescription' },
-      { header: 'Expected State', key: 'expectedState' }
+      { header: 'Expected State', key: 'expectedState' },
+      { header: 'Coverage (%)', key: 'coverage', style: { numFmt: '0.00%' } }
     ];
 
     const stateTests = (run.stateTests || []);
@@ -238,6 +239,7 @@ exports.downloadStateCsv = async (req, res) => {
     const attemptDest = (tc) => tc.attemptedState || tc.expectedState || '';
 
     let counter = 1;
+    const totalSingles = Math.max(stateTests.length, 1);
 
     // Valid rows
     stateValid.forEach(tc => {
@@ -247,7 +249,8 @@ exports.downloadStateCsv = async (req, res) => {
         testCaseID: id,
         startState: tc.startState,
         transitionDescription: tc.transitionDescription || `${tc.startState} --> ${tc.expectedState}`,
-        expectedState: tc.expectedState
+        expectedState: tc.expectedState,
+        coverage: counter / totalSingles
       });
       counter++;
     });
@@ -261,7 +264,8 @@ exports.downloadStateCsv = async (req, res) => {
         testCaseID: id,
         startState: tc.startState,
         transitionDescription: tc.transitionDescription || `${tc.startState} --> ${to}`,
-        expectedState: to
+        expectedState: to,
+        coverage: counter / totalSingles
       });
       counter++;
     });
@@ -271,15 +275,18 @@ exports.downloadStateCsv = async (req, res) => {
     const stateSeqSheet = wb.addWorksheet('State Sequences');
     stateSeqSheet.columns = [
       { header: 'Test Case ID', key: 'testCaseID' },
-      { header: 'Sequence of Transitions', key: 'sequence' }
+      { header: 'Sequence of Transitions', key: 'sequence' },
+      { header: 'Coverage (%)', key: 'coverage', style: { numFmt: '0.00%' } }
     ];
 
     let seqCounter = 1;
+    const totalSeq = Math.max((run.stateSequences || []).length, 1);
     (run.stateSequences || []).forEach(s => {
       const id = `TC${String(seqCounter).padStart(3, '0')}`;
       stateSeqSheet.addRow({
         testCaseID: id,
-        sequence: Array.isArray(s.sequence) ? s.sequence.join(' → ') : ''
+        sequence: Array.isArray(s.sequence) ? s.sequence.join(' → ') : '',
+        coverage: seqCounter / totalSeq
       });
       seqCounter++;
     });
@@ -317,10 +324,12 @@ exports.downloadCombined = async (req, res) => {
       { header: 'Test Case ID', key: 'testCaseID' },
       { header: 'Type', key: 'type' },
       ...ecpInputKeys.map(k => ({ header: k, key: k })),
-      ...ecpExpectedKeys.map(k => ({ header: k, key: `exp_${k}` }))
+      ...ecpExpectedKeys.map(k => ({ header: k, key: `exp_${k}` })),
+      { header: 'Coverage (%)', key: 'coverage', style: { numFmt: '0.00%' } }
     ];
-    run.testCases.forEach(tc => {
-      const row = { testCaseID: tc.testCaseID, type: tc.type || 'Valid' };
+    const totalEcp = Math.max(run.testCases.length, 1);
+    run.testCases.forEach((tc, idx) => {
+      const row = { testCaseID: tc.testCaseID, type: tc.type || 'Valid', coverage: (idx + 1) / totalEcp };
       ecpInputKeys.forEach(k => row[k] = tc.inputs[k]);
       ecpExpectedKeys.forEach(k => row[`exp_${k}`] = tc.expected[k]);
       ecpSheet.addRow(row);
@@ -354,7 +363,8 @@ exports.downloadCombined = async (req, res) => {
       { header: 'Type', key: 'type' },
       { header: 'Start State', key: 'startState' },
       { header: 'Transition Description', key: 'transitionDescription' },
-      { header: 'Expected State', key: 'expectedState' }
+      { header: 'Expected State', key: 'expectedState' },
+      { header: 'Coverage (%)', key: 'coverage', style: { numFmt: '0.00%' } }
     ];
 
     const stateTests = (run.stateTests || []);
@@ -363,6 +373,7 @@ exports.downloadCombined = async (req, res) => {
     const attemptDest = (tc) => tc.attemptedState || tc.expectedState || '';
 
     let counter = 1;
+    const totalSingles = Math.max(stateTests.length, 1);
 
     // Valid rows
     stateValid.forEach(tc => {
@@ -372,7 +383,8 @@ exports.downloadCombined = async (req, res) => {
         testCaseID: id,
         startState: tc.startState,
         transitionDescription: tc.transitionDescription || `${tc.startState} --> ${tc.expectedState}`,
-        expectedState: tc.expectedState
+        expectedState: tc.expectedState,
+        coverage: counter / totalSingles
       });
       counter++;
     });
@@ -386,7 +398,8 @@ exports.downloadCombined = async (req, res) => {
         testCaseID: id,
         startState: tc.startState,
         transitionDescription: tc.transitionDescription || `${tc.startState} --> ${to}`,
-        expectedState: to
+        expectedState: to,
+        coverage: counter / totalSingles
       });
       counter++;
     });
@@ -396,15 +409,18 @@ exports.downloadCombined = async (req, res) => {
     const stateSeqSheet = wb.addWorksheet('State Sequences');
     stateSeqSheet.columns = [
       { header: 'Test Case ID', key: 'testCaseID' },
-      { header: 'Sequence of Transitions', key: 'sequence' }
+      { header: 'Sequence of Transitions', key: 'sequence' },
+      { header: 'Coverage (%)', key: 'coverage', style: { numFmt: '0.00%' } }
     ];
 
     let seqCounter = 1;
+    const totalSeq = Math.max((run.stateSequences || []).length, 1);
     (run.stateSequences || []).forEach(s => {
       const id = `TC${String(seqCounter).padStart(3, '0')}`;
       stateSeqSheet.addRow({
         testCaseID: id,
-        sequence: Array.isArray(s.sequence) ? s.sequence.join(' → ') : ''
+        sequence: Array.isArray(s.sequence) ? s.sequence.join(' → ') : '',
+        coverage: seqCounter / totalSeq
       });
       seqCounter++;
     });

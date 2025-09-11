@@ -71,15 +71,18 @@ module.exports.generateAll = async (
       'Type',
       'Start State',
       'Transition Description',
-      'Expected State'
+      'Expected State',
+      'Coverage (%)'
     ];
 
-    const singleRows = stateTests.map(r => [
-      r.type,
+    const totalSingles = Math.max(stateTests.length, 1);
+    const singleRows = stateTests.map((r, i) => [
       r.testCaseID,
+      r.type,
       r.startState,
       r.transitionDescription,
-      r.expectedState
+      r.expectedState,
+      `${(((i + 1) / totalSingles) * 100).toFixed(2)}%`
     ]);
 
     stateCsvData = stringify([singleHeader, ...singleRows]);
@@ -95,24 +98,28 @@ module.exports.generateAll = async (
       maxDepth: 8
     });
 
-    // sequences CSV (2 columns)
-    const seqHeader = ['Test Case ID', 'Sequence'];
+    // sequences CSV (with Coverage)
+    const seqHeader = ['Test Case ID', 'Sequence', 'Coverage (%)'];
+    const totalSeq = Math.max(stateSequences.length, 1);
     const seqRows = stateSequences.map((s, i) => [
       `TC${String(i + 1).padStart(3, '0')}`,
-      s.sequence.join(' → ')
+      s.sequence.join(' → '),
+      `${(((i + 1) / totalSeq) * 100).toFixed(2)}%`
     ]);
     stateSeqCsvData = stringify([seqHeader, ...seqRows]);
   }
 
-  // 4) ECP CSV
+  // 4) ECP CSV (with Coverage)
   const ecpInputKeys = testCases.length ? Object.keys(testCases[0].inputs) : [];
   const ecpExpectedKeys = testCases.length ? Object.keys(testCases[0].expected) : [];
-  const ecpHeader = ['Test Case ID', 'Type', ...ecpInputKeys, ...ecpExpectedKeys];
-  const ecpRows = testCases.map(tc => [
+  const ecpHeader = ['Test Case ID', 'Type', ...ecpInputKeys, ...ecpExpectedKeys, 'Coverage (%)'];
+  const totalEcp = Math.max(testCases.length, 1);
+  const ecpRows = testCases.map((tc, idx) => [
     tc.testCaseID,
     tc.type || 'Valid',
     ...ecpInputKeys.map(k => tc.inputs[k]),
-    ...ecpExpectedKeys.map(k => tc.expected[k])
+    ...ecpExpectedKeys.map(k => tc.expected[k]),
+    `${(((idx + 1) / totalEcp) * 100).toFixed(2)}%`
   ]);
   const ecpCsvData = stringify([ecpHeader, ...ecpRows]);
 
@@ -152,15 +159,16 @@ module.exports.generateAll = async (
     r.expectedState
   ]);
 
-  // Map sequences to "Seq" rows in combined
-  const combinedSeqRows = stateSequences.map(s => [
+  // Map sequences to "Seq" rows in combined (fill coverage in last column)
+  const totalSeqForCombined = Math.max(stateSequences.length, 1);
+  const combinedSeqRows = stateSequences.map((s, i) => [
     'Seq',
     ...Array(ecpHeader.length + synHeader.length).fill(''),
     'Sequence',
     s.seqCaseID || '',              // if your enumerateStateSequences returns seqCaseID
     s.sequence.join(' → '),
     '',
-    ''
+    `${(((i + 1) / totalSeqForCombined) * 100).toFixed(2)}%`
   ]);
 
   const combinedRows = [
