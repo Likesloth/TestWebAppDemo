@@ -99,7 +99,7 @@ module.exports.generateAll = async (
       maxDepth: 8
     });
 
-    // If finals are defined, keep only sequences that end at a final state
+    // Filter: keep only sequences that end at a final state
     if (finalIds && finalIds.length) {
       const finalSet = new Set(finalIds);
       stateSequences = stateSequences.filter(s => {
@@ -108,6 +108,12 @@ module.exports.generateAll = async (
           : null;
         return last && finalSet.has(last);
       });
+
+      // Renumber seqCaseID to be contiguous after filtering
+      stateSequences = stateSequences.map((s, idx) => ({
+        ...s,
+        seqCaseID: `TC${String(idx + 1).padStart(3, '0')}`
+      }));
     }
 
     // sequences CSV (with Coverage)

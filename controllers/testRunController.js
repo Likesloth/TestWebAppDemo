@@ -66,6 +66,24 @@ exports.createTestRun = async (req, res) => {
       text: '' // no event in 5-col schema
     }));
 
+    // Build a sequences-based tree (duplicate nodes per step to avoid cycles)
+    const seqNodeMap = new Map();
+    const seqLinks = [];
+    (stateSequences || []).forEach(s => {
+      const path = Array.isArray(s.sequence) ? s.sequence : [];
+      for (let i = 0; i < path.length; i++) {
+        const state = path[i];
+        const key = `${s.seqCaseID}:${String(i).padStart(2, '0')}:${state}`;
+        if (!seqNodeMap.has(key)) seqNodeMap.set(key, { key, label: state });
+        if (i > 0) {
+          const prev = path[i - 1];
+          const prevKey = `${s.seqCaseID}:${String(i - 1).padStart(2, '0')}:${prev}`;
+          seqLinks.push({ from: prevKey, to: key, text: '' });
+        }
+      }
+    });
+    const seqNodes = Array.from(seqNodeMap.values());
+
     // 5) return metadata + URLs + diagram data
     const base = `${req.protocol}://${req.get('host')}/api/runs/${run._id}`;
     return res.json({
@@ -80,6 +98,9 @@ exports.createTestRun = async (req, res) => {
       stateSequences,
       nodes,
       links,
+      // Tree-friendly, sequence-expanded nodes/links
+      seqNodes,
+      seqLinks,
       ecpCsvUrl: `${base}/ecp-csv`,
       syntaxCsvUrl: `${base}/syntax-csv`,
       stateCsvUrl: `${base}/state-csv`,
@@ -172,6 +193,31 @@ exports.getTestRun = async (req, res) => {
       // Diagram data
       nodes,
       links,
+      // Tree-friendly, sequence-expanded nodes/links
+      seqNodes: (() => {
+        const seqNodeMap = new Map();
+        (run.stateSequences || []).forEach(s => {
+          const path = Array.isArray(s.sequence) ? s.sequence : [];
+          for (let i = 0; i < path.length; i++) {
+            const state = path[i];
+            const key = `${s.seqCaseID}:${String(i).padStart(2, '0')}:${state}`;
+            if (!seqNodeMap.has(key)) seqNodeMap.set(key, { key, label: state });
+          }
+        });
+        return Array.from(seqNodeMap.values());
+      })(),
+      seqLinks: (() => {
+        const links = [];
+        (run.stateSequences || []).forEach(s => {
+          const path = Array.isArray(s.sequence) ? s.sequence : [];
+          for (let i = 1; i < path.length; i++) {
+            const prevKey = `${s.seqCaseID}:${String(i - 1).padStart(2, '0')}:${path[i - 1]}`;
+            const key = `${s.seqCaseID}:${String(i).padStart(2, '0')}:${path[i]}`;
+            links.push({ from: prevKey, to: key, text: '' });
+          }
+        });
+        return links;
+      })(),
 
       // Download URLs
       ecpCsvUrl: `${base}/ecp-csv`,
