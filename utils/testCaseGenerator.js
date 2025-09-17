@@ -1,4 +1,4 @@
-// utils/testCaseGenerator.js
+﻿// utils/testCaseGenerator.js
 const {
   processDataDictionary,
   processDecisionTree
@@ -6,11 +6,11 @@ const {
 
 module.exports = async function generateTestCasesLogic(dataDictionaryPath, decisionTreePath) {
   const {
-    inputsMeta,      // [{ varName, type }, …]
+    inputsMeta,      // [{ varName, type }, �?�]
     outputMeta,      // { varName, type }
-    rangeConditions, // [{ id, varName, min, max, mid }, …]
-    typeConditions,  // [{ id, varName, label }, …]
-    actions          // [{ id, value }, …]
+    rangeConditions, // [{ id, varName, min, max, mid }, �?�]
+    typeConditions,  // [{ id, varName, label }, �?�]
+    actions          // [{ id, value }, �?�]
   } = await processDataDictionary(dataDictionaryPath);
 
   // Only consider inputs that actually participate in ECP via <Condition>
@@ -21,51 +21,58 @@ module.exports = async function generateTestCasesLogic(dataDictionaryPath, decis
   const decisions = await processDecisionTree(decisionTreePath);
   const testCases = [];
 
+  const addInputFromConditionRef = (refId, target) => {
+    if (!refId) return false;
+    const range = rangeConditions.find(r => r.id === refId);
+    if (range) {
+      target[range.varName] = range.mid;
+      return true;
+    }
+    const nominal = typeConditions.find(t => t.id === refId);
+    if (nominal) {
+      target[nominal.varName] = nominal.label;
+      return true;
+    }
+    return false;
+  };
+
   decisions.forEach((decision, idx) => {
     const inputs   = {};
     const expected = {};
     let valid      = false;
 
-    // CASE A: single‐level rule: <Condition .../><ACTION .../> directly under <Decision>
+    // CASE A: single�??level rule: <Condition .../><ACTION .../> directly under <Decision>
     if (decision.ACTION) {
       const cond = decision.Condition;
-      const refid = cond.$?.refid;
-      if (refid) {
-        const r = rangeConditions.find(r => r.id === refid);
-        const t = typeConditions .find(t => t.id === refid);
-        if (r) {
-          inputs[r.varName] = r.mid;
-          valid = true;
-        }
-        if (t) {
-          inputs[t.varName] = t.label;
-          valid = true;
-        }
-      }
+      const refid = cond?.$?.refid;
+      const hasInputs = addInputFromConditionRef(refid, inputs);
       const act = actions.find(a => a.id === decision.ACTION.$?.refid);
+
       if (act) {
-        expected[ outputMeta.varName ] = act.value;
-        valid = valid && true;
+        expected[outputMeta.varName] = act.value;
       }
+
+      valid = hasInputs && Boolean(act);
     }
     // CASE B: nested rule: <Condition><Condition><ACTION/></Condition></Condition>
     else if (decision.Condition?.Condition) {
       const outer = decision.Condition;
       const inner = outer.Condition;
-      const numRef = outer.$.refid;
-      const ordRef = inner.$.refid;
-      const actRef = inner.ACTION?.$?.refid;
+      const outerRef = outer.$?.refid;
+      const innerRef = inner.$?.refid;
+      const actionNode = inner.ACTION || outer.ACTION;
+      const actRef = actionNode?.$?.refid;
 
-      const r = rangeConditions.find(r => r.id === numRef);
-      const t = typeConditions .find(t => t.id === ordRef);
-      const a = actions        .find(a => a.id === actRef);
+      let hasInputs = false;
+      hasInputs = addInputFromConditionRef(outerRef, inputs) || hasInputs;
+      hasInputs = addInputFromConditionRef(innerRef, inputs) || hasInputs;
 
-      if (r && t && a) {
-        inputs[ r.varName ]           = r.mid;
-        inputs[ t.varName ]           = t.label;
-        expected[ outputMeta.varName ] = a.value;
-        valid = true;
+      const act = actions.find(a => a.id === actRef);
+      if (act) {
+        expected[outputMeta.varName] = act.value;
       }
+
+      valid = hasInputs && Boolean(act);
     }
 
     if (valid) {
