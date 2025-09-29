@@ -1,6 +1,29 @@
 // backend/utils/syntaxParser.js
 const { parseXMLFile } = require('./xmlParser');
 
+function collectSyntaxEntries(target, defs, { fallbackName = '', fallbackType = '' } = {}) {
+  if (!target || !target.Syntax) return;
+
+  const syntaxes = Array.isArray(target.Syntax)
+    ? target.Syntax
+    : [target.Syntax];
+
+  syntaxes.forEach(syn => {
+    if (!syn) return;
+    const attrs = syn.$ || {};
+    const pattern = attrs.Pattern ?? syn.Pattern;
+    if (!pattern) return;
+
+    defs.push({
+      name: fallbackName,
+      description: fallbackName,
+      pattern,
+      type: attrs.Type ?? fallbackType ?? '',
+      length: attrs.Length ?? ''
+    });
+  });
+}
+
 /**
  * Extracts <Syntax> definitions from a Data Dictionary XML
  * (inputXml can be a String path or Buffer).
@@ -23,23 +46,19 @@ async function processSyntaxDefs(inputXml) {
   const defs = [];
 
   inputs.forEach(input => {
-    if (!input.Syntax) return;
-    const syntaxes = Array.isArray(input.Syntax)
-      ? input.Syntax
-      : [input.Syntax];
-
-    syntaxes.forEach(syn => {
-      // Pattern may live on syn.$ or directly as syn.Pattern
-      const pattern = syn.$?.Pattern ?? syn.Pattern;
-      defs.push({
-        name:        input.Varname,
-        description: input.Varname,
-        pattern,
-        type:        syn.$?.Type ?? input.DataType ?? '',
-        length:      syn.$?.Length ?? ''
-      });
+    if (!input) return;
+    collectSyntaxEntries(input, defs, {
+      fallbackName: input.Varname,
+      fallbackType: input.DataType ?? ''
     });
   });
+
+  if (usecase.Output) {
+    collectSyntaxEntries(usecase.Output, defs, {
+      fallbackName: usecase.Output.Varname || 'Output',
+      fallbackType: usecase.Output.DataType ?? ''
+    });
+  }
 
   return defs;
 }

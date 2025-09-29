@@ -1,10 +1,33 @@
-// backend/utils/ecpParser.js
+﻿// backend/utils/ecpParser.js
 
 const { parseXMLFile } = require('./xmlParser');
 
 /** Midpoint helper */
-function calculateMidpoint(min, max) {
-  return Math.floor((Number(min) + Number(max)) / 2);
+function calculateMidpoint(min, max, dataType) {
+  const numMin = Number(min);
+  const numMax = Number(max);
+
+  if (!Number.isFinite(numMin) || !Number.isFinite(numMax)) {
+    return null;
+  }
+
+  const avg = (numMin + numMax) / 2;
+  const decimalPlaces = (value) => {
+    const match = String(value).match(/\.(\d+)/);
+    return match ? match[1].length : 0;
+  };
+
+  const maxPlaces = Math.max(decimalPlaces(min), decimalPlaces(max));
+  const typeLower = typeof dataType === "string" ? dataType.toLowerCase() : "";
+  const requiresDecimal = maxPlaces > 0 || typeLower === "decimal" || typeLower === "float";
+
+  if (!requiresDecimal) {
+    const rounded = Math.round(avg);
+    return Math.min(numMax, Math.max(numMin, rounded));
+  }
+
+  const precision = Math.max(maxPlaces, 2);
+  return Number(avg.toFixed(precision));
 }
 
 /**
@@ -49,12 +72,16 @@ async function processDataDictionary(inputXml) {
     if (scale === "Range") {
       conds.forEach(c => {
         const { id, min, max } = c.$;
+        const minStr = min;
+        const maxStr = max;
+
         rangeConditions.push({
           id,
           varName,
-          min: Number(min),
-          max: Number(max),
-          mid: calculateMidpoint(min, max)
+          min: Number(minStr),
+          max: Number(maxStr),
+          mid: calculateMidpoint(minStr, maxStr, input.DataType),
+          dataType: input.DataType || null
         });
       });
     }
@@ -120,3 +147,8 @@ module.exports = {
   processDataDictionary,
   processDecisionTree
 };
+
+
+
+
+
