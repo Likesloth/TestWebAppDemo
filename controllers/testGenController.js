@@ -26,6 +26,34 @@ function buildStateTestRows(validCases, invalidCases) {
   }));
 }
 
+function shouldForceExcelText(name, value) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  const trimmed = value.trim();
+  if (/^\d{15,}$/.test(trimmed)) {
+    return true;
+  }
+  if (/^\d{2}(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\d{4}$/.test(trimmed)) {
+    return true;
+  }
+  return false;
+}
+
+function ensureExcelText(name, value) {
+  if (typeof value !== 'string') {
+    return value;
+  }
+  if (!shouldForceExcelText(name, value)) {
+    return value;
+  }
+  if (value.startsWith('="')) {
+    return value;
+  }
+  const escaped = value.replace(/"/g, '""');
+  return `="${escaped}"`;
+}
+
 module.exports.generateAll = async (
   dataDictionaryPath,
   decisionTreePath,
@@ -143,14 +171,17 @@ module.exports.generateAll = async (
 
   // 5) Syntax CSV
   const synHeader = ['Name', 'valid', 'invalidValue', 'invalidOmission', 'invalidAddition', 'invalidSubstitution'];
-  const synRows = syntaxResults.map(sr => [
-    sr.name,
-    sr.testCases.valid,
-    sr.testCases.invalidValue,
-    sr.testCases.invalidOmission,
-    sr.testCases.invalidAddition,
-    sr.testCases.invalidSubstitution
-  ]);
+  const synRows = syntaxResults.map(sr => {
+    const values = sr.testCases;
+    return [
+      sr.name,
+      ensureExcelText(sr.name, values.valid),
+      ensureExcelText(sr.name, values.invalidValue),
+      ensureExcelText(sr.name, values.invalidOmission),
+      ensureExcelText(sr.name, values.invalidAddition),
+      ensureExcelText(sr.name, values.invalidSubstitution)
+    ];
+  });
   const syntaxCsvData = stringify([synHeader, ...synRows]);
 
   // 6) Combined CSV (unchanged layout, but now fed from new state rows)
