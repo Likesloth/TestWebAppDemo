@@ -1,29 +1,25 @@
-// backend/utils/stateTreeBuilder.js
-
 /**
  * Build a tree-like unfolding of a state machine graph.
  * - Duplicates node per occurrence (no reuse), unique keys per position
  * - Labels links with events
  * - Stops at finals or maxDepth
  * - Optional trivial bounce filter (A->B->A)
- *
- * @param {{
- *  transitions: { from: string, event?: string, to: string }[],
- *  initialId?: string,
- *  finalIds?: string[],
- *  maxDepth?: number,
- *  filterBounce?: boolean
- * }} params
- * @returns {{ nodes: { key: string, label: string }[], links: { from: string, to: string, text: string }[] }}
  */
 function buildStateTree({
   transitions = [],
   initialId,
   finalIds = [],
   maxDepth = 8,
-  filterBounce = true
+  filterBounce = true,
+  maxRepeatsPerState = 2,
+  appendDuplicateIndex = true,
+  treatRetiredAsTerminal = true,
+  recoveryLabels = ['Normal', 'Pass'],
+  stopOnRecoveryReentry = true,
+  expandOnceGlobally = true,
+  stopLabelsOnSide = ['First Pro']
 }) {
-  // Determine a practical start name by checking which name actually has outgoing transitions
+  // --- determine start node
   const hasFrom = (name) => transitions.some(t => t && t.from === name);
   const startCandidates = [];
   if (initialId && typeof initialId === 'string') {
@@ -34,7 +30,7 @@ function buildStateTree({
 
   const finals = new Set(finalIds || []);
 
-  // adjacency by from
+  // --- adjacency map
   const graph = new Map();
   for (const t of transitions) {
     if (!t || typeof t.from !== 'string') continue;
@@ -44,36 +40,113 @@ function buildStateTree({
 
   const nodes = [];
   const links = [];
-  let counter = 0; // monotonically increasing to stabilize keys
+  let counter = 0;
+  const expandedOnce = new Set();
 
-  const makeKey = (depth, state) => `TREE:${String(counter++).padStart(4, '0')}:${String(depth).padStart(2, '0')}:${state}`;
+  const makeKey = (depth, baseLabel, dupIndex) => {
+    const suffix = appendDuplicateIndex && dupIndex > 1 ? `_${dupIndex}` : '';
+    return `TREE:${String(counter++).padStart(4, '0')}:${String(depth).padStart(2, '0')}:${baseLabel}${suffix}`;
+  };
 
-  // DFS stack frames include the parent state label and its key for link building
-  function dfs(state, depth, parentKey, parentLabel, lastStateLabel, incomingEvent) {
-    const key = makeKey(depth, state);
-    nodes.push({ key, label: state });
+  const isTerminal = (label) => {
+    const l = String(label).toLowerCase();
+    if (finals.has(label)) return true;
+    if (l === 'final') return true;
+    if (treatRetiredAsTerminal && l === 'retired') return true;
+    return false;
+  };
 
-    if (parentKey) {
-      links.push({ from: parentKey, to: key, text: incomingEvent || '' });
+  /**
+   * DFS traversal with path-aware recovery context
+   */
+  function dfs(
+    state,
+    depth,
+    parentKey,
+    parentLabel,
+    lastStateLabel,
+    incomingEvent,
+    visitCountMap,
+    pathLabels,
+    inRecoveryBranch // boolean: true after first recovery label in this path
+  ) {
+    const baseLabel = state;
+    const baseLower = String(baseLabel).toLowerCase();
+
+    const currentCount = (visitCountMap.get(baseLabel) || 0) + 1;
+    const newVisit = new Map(visitCountMap);
+    newVisit.set(baseLabel, currentCount);
+
+    const key = makeKey(depth, baseLabel, currentCount);
+    nodes.push({ key, label: baseLabel });
+    if (parentKey) links.push({ from: parentKey, to: key, text: incomingEvent || '' });
+
+    // --- stop at terminal/depth
+    if (isTerminal(baseLabel) || depth >= maxDepth) return;
+
+    const recoverySet = new Set((recoveryLabels || []).map(x => String(x).toLowerCase()));
+    const stopSideSet = new Set((stopLabelsOnSide || []).map(x => String(x).toLowerCase()));
+
+    // stop if recovery reentry on same path
+    if (stopOnRecoveryReentry && recoverySet.has(baseLower) && pathLabels.includes(baseLabel)) return;
+
+    // Determine if we're in the recovery branch: once true, stays true down this subtree
+    const isRecoveryNode = recoverySet.has(baseLower);
+    const newInRecoveryBranch = inRecoveryBranch || isRecoveryNode;
+
+    // Side stop: if inside recovery branch, parent is NOT recovery, and current label is a stop label (e.g., First Pro), stop here
+    const parentIsRecovery = recoverySet.has(String(parentLabel || '').toLowerCase());
+    if (newInRecoveryBranch && !parentIsRecovery && stopSideSet.has(baseLower)) return;
+
+    const outs = graph.get(baseLabel) || [];
+
+    // --- Global expand-once (context-aware)
+    if (expandOnceGlobally) {
+      const contextKey = `${baseLower}::${newInRecoveryBranch ? 'main' : 'side'}`;
+      if (expandedOnce.has(contextKey)) return;
+      if (outs.length) expandedOnce.add(contextKey);
     }
 
-    if (finals.has(state) || depth >= maxDepth) return;
-
-    const outs = graph.get(state) || [];
-    // sort by event/text to provide stable ordering
-    outs.sort((a, b) => String(a.event).localeCompare(String(b.event)) || String(a.to).localeCompare(String(b.to)));
+    // --- Sort transitions for stable layout
+    outs.sort(
+      (a, b) =>
+        String(a.event).localeCompare(String(b.event)) ||
+        String(a.to).localeCompare(String(b.to))
+    );
 
     for (const tr of outs) {
-      if (filterBounce && lastStateLabel && tr.to === lastStateLabel) {
-        // skip trivial bounce A->B->A
+      // Only skip immediate back-edge to the direct parent (A -> B -> A),
+      // BUT allow it when bouncing back to a recovery label (e.g., Normal/Pass)
+      if (filterBounce && parentLabel && tr.to === parentLabel) {
+        const toLower = String(tr.to).toLowerCase();
+        if (!recoverySet.has(toLower)) continue;
+      }
+
+      const nextBase = tr.to;
+      const nextCount = (newVisit.get(nextBase) || 0) + 1;
+      if (nextCount > maxRepeatsPerState) {
+        const nextKey = makeKey(depth + 1, nextBase, nextCount);
+        nodes.push({ key: nextKey, label: nextBase });
+        links.push({ from: key, to: nextKey, text: tr.event || '' });
         continue;
       }
-      dfs(tr.to, depth + 1, key, state, parentLabel || null, tr.event || '');
+
+      const nextPath = [...(pathLabels || []), baseLabel];
+      dfs(
+        nextBase,
+        depth + 1,
+        key,
+        baseLabel,
+        parentLabel || null,
+        tr.event || '',
+        newVisit,
+        nextPath,
+        newInRecoveryBranch
+      );
     }
   }
 
-  // create root at depth 0 (no parent link)
-  dfs(start, 0, null, null, null, '');
+  dfs(start, 0, null, null, null, '', new Map(), [], false);
 
   return { nodes, links };
 }

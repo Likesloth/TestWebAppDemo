@@ -1,89 +1,71 @@
 // backend/utils/stateSequences.js
 
 /**
- * Enumerate readable, non-recursive sequences starting from a hardcoded
- * 'initial' node, expanding up to three transitions deep.
- *
- * Behavior mirrors the legacy UI logic you described:
- *  - Start: path = 'initial' (lowercase, hardcoded)
- *  - Level 1..3: follow outgoing transitions depth-first
- *  - Probe Level 4 but do not append it
- *  - Filter trivial recursion:
- *      • Two-way bounce: (s2.from == s3.to && s2.to == s3.from)
- *      • One-way immediate loop: (s1.from == s2.to)
- *  - Uniqueness: do not add duplicate sequence strings
- *  - Output: array of { seqCaseID, sequence[] }
- *
- * Important: Because start is hardcoded to 'initial', XMLs that name the
- * initial state differently (e.g., 'Initial') will not produce sequences.
- *
- * @param {{
- *  transitions: { from: string, event?: string, to: string }[],
- *  initialId?: string // optional: prefer this start if it exists
- * }} params
- * @returns {{ seqCaseID: string, sequence: string[] }[]}
+ * Enumerate complete sequences from initial using DFS, stopping at terminals:
+ * - hard terminals: any <final> id
+ * - soft terminals: domain labels like Retired/Pass/Cancelled
+ * - dead-end: no outgoing transitions
+ * - loop-closure: all outgoing targets already in current path (no new frontier)
  */
-function enumerateStateSequences({ transitions = [], initialId }) {
-  // Determine a sensible START:
-  // 1) Prefer provided initialId (as-is) if there are outgoing transitions
-  // 2) Fallback to common variants: 'initial' (lower), 'Initial' (upper)
-  // 3) If none match, keep 'initial' to mirror legacy behavior
-  const hasFrom = (name) => transitions.some(t => t && t.from === name);
-  const candidates = [];
-  if (initialId && typeof initialId === 'string') {
-    candidates.push(initialId);
-    candidates.push(initialId.toLowerCase());
-    // add capitalized variant
-    candidates.push(initialId.charAt(0).toUpperCase() + initialId.slice(1));
+function enumerateStateSequences({
+  transitions = [],
+  initialId,
+  finalIds = [],
+  softTerminals = ['Retired', 'Retirement', 'Pass', 'Cancelled'],
+  recoveryLabels = ['Normal', 'Pass'], // states that stop expansion when re-entered
+  maxDepth = 8,
+  maxRepeatsPerState = 1
+}) {
+  const graph = new Map();
+  for (const { from, to, event } of transitions) {
+    if (!graph.has(from)) graph.set(from, []);
+    graph.get(from).push({ to, event });
   }
-  candidates.push('initial');
-  candidates.push('Initial');
-  const START = candidates.find(c => hasFrom(c)) || 'initial';
+
+  const finalSet = new Set(finalIds);
+  const softSet = new Set(softTerminals.map(s => s.toLowerCase()));
+  const recoverySet = new Set(recoveryLabels.map(s => s.toLowerCase()));
+
+  const isTerminal = (state, path) => {
+    const lower = state.toLowerCase();
+    if (finalSet.has(state)) return true;
+    if (softSet.has(lower)) return true;
+    const outs = graph.get(state) || [];
+    if (!outs.length) return true;
+
+    // stop when re-entering recovery
+    if (path.some(p => recoverySet.has(p.toLowerCase()) && p !== state && recoverySet.has(lower)))
+      return true;
+
+    // stop when all next transitions lead to visited states
+    const pathSet = new Set(path);
+    const hasNewFrontier = outs.some(e => !pathSet.has(e.to));
+    return !hasNewFrontier;
+  };
 
   const results = [];
-  const seen = new Set(); // sequence string uniqueness
-  let counter = 1;
+  const seen = new Set();
+  let id = 1;
 
-  const addIfNew = (pathArr) => {
-    const key = pathArr.join(' → ');
-    if (seen.has(key)) return;
-    seen.add(key);
-    results.push({
-      seqCaseID: `TC${String(counter++).padStart(3, '0')}`,
-      sequence: pathArr.slice()
-    });
-  };
-  // Level 1: transitions from START
-  const level1 = transitions.filter(t => t && t.from === START);
-  for (const s1 of level1) {
-    const p1 = [START, s1.to];
-    addIfNew(p1);
-
-    // Level 2: transitions from s1.to
-    const level2 = transitions.filter(t => t && t.from === s1.to);
-    for (const s2 of level2) {
-      // One-way immediate loop: (s1.from == s2.to)
-      if (s1.from === s2.to) continue;
-
-      const p2 = [START, s1.to, s2.to];
-      addIfNew(p2);
-
-      // Level 3: transitions from s2.to
-      const level3 = transitions.filter(t => t && t.from === s2.to);
-      for (const s3 of level3) {
-        // Two-way bounce: (s2.from == s3.to && s2.to == s3.from)
-        if (s2.from === s3.to && s2.to === s3.from) continue;
-
-        const p3 = [START, s1.to, s2.to, s3.to];
-        addIfNew(p3);
-
-        // Probe Level 4 (outgoing from s3.to) but do not append
-        // const level4 = transitions.filter(t => t && t.from === s3.to);
+  const dfs = (state, path) => {
+    if (path.length > maxDepth || isTerminal(state, path)) {
+      const key = path.join('→');
+      if (!seen.has(key)) {
+        seen.add(key);
+        results.push({ seqCaseID: `TC${String(id++).padStart(3, '0')}`, sequence: [...path] });
       }
+      return;
     }
-  }
+    const outs = graph.get(state) || [];
+    for (const { to } of outs) {
+      if (path.includes(to)) continue; // don’t revisit
+      dfs(to, [...path, to]);
+    }
+  };
 
+  dfs(initialId, [initialId]);
   return results;
 }
+
 
 module.exports = { enumerateStateSequences };
