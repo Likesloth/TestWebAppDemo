@@ -3,6 +3,7 @@ const { stringify } = require('csv-stringify/sync');
 
 const generatePartitions = require('../utils/partitionGenerator');
 const generateTestCasesLogic = require('../utils/testCaseGenerator');
+const { generateValidEcpFromFiles } = require('../utils/ecpMapGenerator');
 const { processSyntaxDefs } = require('../utils/syntaxParser');
 const { generateSyntaxTests } = require('../utils/syntaxTestGenerator');
 const { processStateDefs } = require('../utils/stateParser');
@@ -49,10 +50,23 @@ module.exports.generateAll = async (
 ) => {
   // 1) ECP
   const partitions = await generatePartitions(dataDictionaryPath);
-  const testCases = await generateTestCasesLogic(
+  // Option B: Use map-based resolver for valid cases, merge with legacy invalids
+  const validCases = await generateValidEcpFromFiles(
     dataDictionaryPath,
     decisionTreePath
   );
+  const legacyCases = await generateTestCasesLogic(
+    dataDictionaryPath,
+    decisionTreePath
+  );
+  const invalidCases = legacyCases.filter(tc => tc.type === 'Invalid');
+  // Renumber invalids to continue after the last valid case ID
+  const startIdx = validCases.length + 1;
+  const renumberedInvalids = invalidCases.map((tc, i) => ({
+    ...tc,
+    testCaseID: `TC${String(startIdx + i).padStart(3, '0')}`
+  }));
+  const testCases = [...validCases, ...renumberedInvalids];
 
   // 2) Syntax
   const syntaxDefs = await processSyntaxDefs(dataDictionaryPath);
