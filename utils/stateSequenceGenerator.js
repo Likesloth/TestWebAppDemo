@@ -1,102 +1,71 @@
 // backend/utils/stateSequences.js
 
 /**
- * Enumerate ONLY "complete" state sequences from a state graph.
- * A sequence is considered complete when:
- *  - it reaches any state listed in `finalIds`, OR
- *  - it cannot continue (dead end, i.e., no valid next states left).
- *
- * Notes:
- *  - We DO NOT record intermediate prefixes that can still continue.
- *  - To avoid infinite loops, we (a) cap path length with `maxDepth`,
- *    and (b) limit how many times the same state can be revisited
- *    in a single path with `maxRepeatsPerState`.
- *  - When `maxDepth` is reached, we treat the path as terminal to prevent runaway loops.
- *
- * @param {{
- *  initialId: string,
- *  transitions: { from: string, event?: string, to: string }[],
- *  finalIds: string[],
- *  maxDepth?: number,              // default 8
- *  maxRepeatsPerState?: number,    // default 2
- * }} params
- * @returns {{ seqCaseID: string, sequence: string[] }[]}
+ * Enumerate complete sequences from initial using DFS, stopping at terminals:
+ * - hard terminals: any <final> id
+ * - soft terminals: domain labels like Retired/Pass/Cancelled
+ * - dead-end: no outgoing transitions
+ * - loop-closure: all outgoing targets already in current path (no new frontier)
  */
 function enumerateStateSequences({
+  transitions = [],
   initialId,
-  transitions,
-  finalIds,
+  finalIds = [],
+  softTerminals = ['Retired', 'Retirement', 'Pass', 'Cancelled'],
+  recoveryLabels = ['Normal', 'Pass'], // states that stop expansion when re-entered
   maxDepth = 8,
-  maxRepeatsPerState = 2,
+  maxRepeatsPerState = 1
 }) {
-  if (!initialId) return [];
-
-  // Build adjacency list: state -> array of neighbor states (events are not needed here)
   const graph = new Map();
-  for (const { from, to } of transitions) {
+  for (const { from, to, event } of transitions) {
     if (!graph.has(from)) graph.set(from, []);
-    graph.get(from).push(to);
+    graph.get(from).push({ to, event });
   }
 
-  const finalSet = new Set(finalIds || []);
+  const finalSet = new Set(finalIds);
+  const softSet = new Set(softTerminals.map(s => s.toLowerCase()));
+  const recoverySet = new Set(recoveryLabels.map(s => s.toLowerCase()));
+
+  const isTerminal = (state, path) => {
+    const lower = state.toLowerCase();
+    if (finalSet.has(state)) return true;
+    if (softSet.has(lower)) return true;
+    const outs = graph.get(state) || [];
+    if (!outs.length) return true;
+
+    // stop when re-entering recovery
+    if (path.some(p => recoverySet.has(p.toLowerCase()) && p !== state && recoverySet.has(lower)))
+      return true;
+
+    // stop when all next transitions lead to visited states
+    const pathSet = new Set(path);
+    const hasNewFrontier = outs.some(e => !pathSet.has(e.to));
+    return !hasNewFrontier;
+  };
+
   const results = [];
-  const seenSeq = new Set(); // avoid duplicate sequences (e.g., different events leading to same state chain)
-  let seqCounter = 1;
+  const seen = new Set();
+  let id = 1;
 
-  const pushResult = (path /*, reason */) => {
-    const key = path.join('→');
-    if (seenSeq.has(key)) return;
-    seenSeq.add(key);
-
-    results.push({
-      seqCaseID: `TC${String(seqCounter++).padStart(3, '0')}`,
-      sequence: path.slice(),
-      // If you want to expose why a path terminated, include `reason` above.
-    });
-  };
-
-  const dfs = (current, path, visitCount, depth) => {
-    // Terminate if we reached a final state
-    if (finalSet.has(current)) {
-      pushResult(path /*, 'final' */);
+  const dfs = (state, path) => {
+    if (path.length > maxDepth || isTerminal(state, path)) {
+      const key = path.join('→');
+      if (!seen.has(key)) {
+        seen.add(key);
+        results.push({ seqCaseID: `TC${String(id++).padStart(3, '0')}`, sequence: [...path] });
+      }
       return;
     }
-
-    // Valid neighbors that still satisfy the repeat limit
-    const neighbors = graph.get(current) || [];
-    const frontier = neighbors.filter(
-      (n) => (visitCount.get(n) || 0) < maxRepeatsPerState
-    );
-
-    // Dead end = no valid neighbors to continue
-    if (frontier.length === 0) {
-      pushResult(path /*, 'dead-end' */);
-      return;
-    }
-
-    // Safety guard: consider maxDepth a terminal condition to prevent runaway loops
-    if (depth >= maxDepth) {
-      pushResult(path /*, 'maxDepth' */);
-      return;
-    }
-
-    // Continue DFS on all valid neighbors
-    for (const nxt of frontier) {
-      path.push(nxt);
-      visitCount.set(nxt, (visitCount.get(nxt) || 0) + 1);
-
-      dfs(nxt, path, visitCount, depth + 1);
-
-      // backtrack
-      visitCount.set(nxt, visitCount.get(nxt) - 1);
-      path.pop();
+    const outs = graph.get(state) || [];
+    for (const { to } of outs) {
+      if (path.includes(to)) continue; // don’t revisit
+      dfs(to, [...path, to]);
     }
   };
 
-  const visitCount = new Map([[initialId, 1]]);
-  dfs(initialId, [initialId], visitCount, 0);
-
+  dfs(initialId, [initialId]);
   return results;
 }
+
 
 module.exports = { enumerateStateSequences };

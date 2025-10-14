@@ -8,6 +8,7 @@ const { generateSyntaxTests } = require('../utils/syntaxTestGenerator');
 const { processStateDefs } = require('../utils/stateParser');
 const { enumerateStateSequences } = require('../utils/stateSequenceGenerator');
 const { buildTransitionMatrix } = require('../utils/stateMatrixGenerator');
+const { buildStateTree } = require('../utils/stateTreeBuilder');
 
 // helper: shape single-transition rows for UI/CSV (5 columns)
 function buildStateTestRows(validCases, invalidCases) {
@@ -116,40 +117,94 @@ module.exports.generateAll = async (
     stateCsvData = stringify([singleHeader, ...singleRows]);
 
 
-    // 3.2) sequences (prefix paths from initial; no events; may end at final or dead-end per your generator)
-    if (!initialId) {
-      throw new Error('StateMachine XML has no <initial id="..."> node; cannot enumerate sequences.');
-    }
-    stateSequences = enumerateStateSequences({
-      initialId,
+    // 3.2) Build unfolded state tree (event-labeled links)
+    const { nodes: stateTreeNodes, links: stateTreeLinks } = buildStateTree({
       transitions,
-      finalIds,      // ensure generator knows terminal states
-      maxDepth: 8
+      initialId,
+      finalIds,
+      maxDepth: 8,
+      filterBounce: true,
+      maxRepeatsPerState: 2,
+      appendDuplicateIndex: true
     });
 
-    // Filter: keep only sequences that end at a final state
-    if (finalIds && finalIds.length) {
-      const finalSet = new Set(finalIds);
-      stateSequences = stateSequences.filter(s => {
-        const last = Array.isArray(s.sequence) && s.sequence.length
-          ? s.sequence[s.sequence.length - 1]
-          : null;
-        return last && finalSet.has(last);
-      });
+    // Attach to scope for return
+    var _stateTreeNodes = stateTreeNodes;
+    var _stateTreeLinks = stateTreeLinks;
 
-      // Renumber seqCaseID to be contiguous after filtering
-      stateSequences = stateSequences.map((s, idx) => ({
-        ...s,
-        seqCaseID: `TC${String(idx + 1).padStart(3, '0')}`
+    // 3.3) sequences derived from the tree (root-to-leaf paths by labels)
+    // Build adjacency by key and an incoming count to find roots
+    const adj = new Map(); // key -> [{toKey, event}]
+    const incoming = new Map();
+    for (const l of stateTreeLinks) {
+      if (!adj.has(l.from)) adj.set(l.from, []);
+      adj.get(l.from).push({ to: l.to, event: l.text || '' });
+      incoming.set(l.to, (incoming.get(l.to) || 0) + 1);
+      if (!incoming.has(l.from)) incoming.set(l.from, incoming.get(l.from) || 0);
+    }
+    const nodeByKey = new Map((stateTreeNodes || []).map(n => [n.key, n]));
+
+    // choose root: prefer node with label == initialId (or 'Initial'), else any with no incoming
+    let roots = Array.from((stateTreeNodes || []).map(n => n.key).filter(k => (incoming.get(k) || 0) === 0));
+    let rootKey = roots.find(k => nodeByKey.get(k)?.label === (initialId || 'Initial'))
+      || roots.find(k => String(nodeByKey.get(k)?.label).toLowerCase() === 'initial')
+      || roots[0] || null;
+
+    const seqSet = new Set();
+    const seqList = [];
+    const seqFormatted = [];
+    function dfsTree(k, pathLabels, pathEvents) {
+      const children = adj.get(k) || [];
+      if (children.length === 0) {
+        const seqKey = pathLabels.join('→');
+        if (!seqSet.has(seqKey)) {
+          seqSet.add(seqKey);
+          const labels = pathLabels.slice();
+          seqList.push(labels);
+          // Build event-labeled string: S0 -(e0)-> S1 -(e1)-> S2 ...
+          const text = (() => {
+            if (!Array.isArray(pathEvents) || pathEvents.length === 0) return labels.join(' → ');
+            const parts = [labels[0]];
+            for (let i = 0; i < pathEvents.length; i++) {
+              const ev = pathEvents[i];
+              parts.push(ev ? `-(${ev})->` : '->', labels[i + 1]);
+            }
+            return parts.join(' ');
+          })();
+          seqFormatted.push(text);
+        }
+        return;
+      }
+      for (const ch of children) {
+        const node = nodeByKey.get(ch.to);
+        const lbl = node ? node.label : ch.to;
+        pathLabels.push(lbl);
+        const evs = Array.isArray(pathEvents) ? pathEvents : [];
+        evs.push(ch.event || '');
+        dfsTree(ch.to, pathLabels, evs);
+        evs.pop();
+        pathLabels.pop();
+      }
+    }
+
+    if (!rootKey) {
+      // fallback: if tree is empty, keep sequences empty
+      stateSequences = [];
+    } else {
+      const rootLabel = nodeByKey.get(rootKey)?.label || 'Initial';
+      dfsTree(rootKey, [rootLabel], []);
+      stateSequences = seqList.map((seq, i) => ({
+        seqCaseID: `TC${String(i + 1).padStart(3, '0')}`,
+        sequence: seq
       }));
     }
 
     // sequences CSV (with Coverage)
-    const seqHeader = ['Test Case ID', 'Sequence', 'Coverage (%)'];
+    const seqHeader = ['Test Case ID', 'Sequence (events)', 'Coverage (%)'];
     const totalSeq = Math.max(stateSequences.length, 1);
     const seqRows = stateSequences.map((s, i) => [
       `TC${String(i + 1).padStart(3, '0')}`,
-      s.sequence.join(' → '),
+      (seqFormatted && seqFormatted[i]) ? seqFormatted[i] : s.sequence.join(' → '),
       `${(((i + 1) / totalSeq) * 100).toFixed(2)}%`
     ]);
     stateSeqCsvData = stringify([seqHeader, ...seqRows]);
@@ -235,6 +290,8 @@ module.exports.generateAll = async (
     syntaxResults,
     stateTests,        // five-column single-transition rows for the UI
     stateSequences,    // sequences array for the sequences sheet/CSV
+    stateTreeNodes: _stateTreeNodes || [],
+    stateTreeLinks: _stateTreeLinks || [],
     ecpCsvData,
     syntaxCsvData,
     stateCsvData,      // CSV of the 5-column single transitions

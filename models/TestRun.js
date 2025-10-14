@@ -79,6 +79,18 @@ const TestRunSchema = new Schema({
   // NEW: CSV for state sequences
   stateSeqCsvData: { type: String, required: false, default: '' },
 
+  // State Tree for diagram (unfolded, per-position nodes)
+  stateTreeNodes: {
+    type: [{ key: String, label: String }],
+    required: false,
+    default: []
+  },
+  stateTreeLinks: {
+    type: [{ from: String, to: String, text: String }],
+    required: false,
+    default: []
+  },
+
   combinedCsvData: { type: String, required: true }
 });
 
