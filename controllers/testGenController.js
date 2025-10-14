@@ -8,6 +8,7 @@ const { generateSyntaxTests } = require('../utils/syntaxTestGenerator');
 const { processStateDefs } = require('../utils/stateParser');
 const { enumerateStateSequences } = require('../utils/stateSequenceGenerator');
 const { buildTransitionMatrix } = require('../utils/stateMatrixGenerator');
+const { buildStateTree } = require('../utils/stateTreeBuilder');
 
 // helper: shape single-transition rows for UI/CSV (5 columns)
 function buildStateTestRows(validCases, invalidCases) {
@@ -122,27 +123,10 @@ module.exports.generateAll = async (
     }
     stateSequences = enumerateStateSequences({
       initialId,
-      transitions,
-      finalIds,      // ensure generator knows terminal states
-      maxDepth: 8
+      transitions
     });
 
-    // Filter: keep only sequences that end at a final state
-    if (finalIds && finalIds.length) {
-      const finalSet = new Set(finalIds);
-      stateSequences = stateSequences.filter(s => {
-        const last = Array.isArray(s.sequence) && s.sequence.length
-          ? s.sequence[s.sequence.length - 1]
-          : null;
-        return last && finalSet.has(last);
-      });
-
-      // Renumber seqCaseID to be contiguous after filtering
-      stateSequences = stateSequences.map((s, idx) => ({
-        ...s,
-        seqCaseID: `TC${String(idx + 1).padStart(3, '0')}`
-      }));
-    }
+    // Per legacy behavior: do not restrict to final states; list unique sequences up to depth 3
 
     // sequences CSV (with Coverage)
     const seqHeader = ['Test Case ID', 'Sequence', 'Coverage (%)'];
@@ -153,6 +137,18 @@ module.exports.generateAll = async (
       `${(((i + 1) / totalSeq) * 100).toFixed(2)}%`
     ]);
     stateSeqCsvData = stringify([seqHeader, ...seqRows]);
+    // 3.3) Build unfolded state tree (event-labeled links)
+    const { nodes: stateTreeNodes, links: stateTreeLinks } = buildStateTree({
+      transitions,
+      initialId,
+      finalIds,
+      maxDepth: 8,
+      filterBounce: true
+    });
+
+    // Attach to scope for return
+    var _stateTreeNodes = stateTreeNodes;
+    var _stateTreeLinks = stateTreeLinks;
   }
 
   // 4) ECP CSV (with Coverage)
@@ -235,6 +231,8 @@ module.exports.generateAll = async (
     syntaxResults,
     stateTests,        // five-column single-transition rows for the UI
     stateSequences,    // sequences array for the sequences sheet/CSV
+    stateTreeNodes: _stateTreeNodes || [],
+    stateTreeLinks: _stateTreeLinks || [],
     ecpCsvData,
     syntaxCsvData,
     stateCsvData,      // CSV of the 5-column single transitions

@@ -23,6 +23,8 @@ exports.createTestRun = async (req, res) => {
       syntaxResults,
       stateTests,        // ✅ new single array of 5-col rows
       stateSequences,    // ✅ sequences
+      stateTreeNodes,    // ✅ unfolded tree nodes
+      stateTreeLinks,    // ✅ unfolded tree links
       ecpCsvData,
       syntaxCsvData,
       stateCsvData,
@@ -41,6 +43,8 @@ exports.createTestRun = async (req, res) => {
       syntaxResults,
       stateTests,
       stateSequences,
+      stateTreeNodes,
+      stateTreeLinks,
       ecpCsvData,
       syntaxCsvData,
       stateCsvData,
@@ -98,9 +102,12 @@ exports.createTestRun = async (req, res) => {
       stateSequences,
       nodes,
       links,
-      // Tree-friendly, sequence-expanded nodes/links
+      // Tree-friendly, sequence-expanded nodes/links (legacy)
       seqNodes,
       seqLinks,
+      // New: Unfolded state tree with event labels
+      stateTreeNodes,
+      stateTreeLinks,
       ecpCsvUrl: `${base}/ecp-csv`,
       syntaxCsvUrl: `${base}/syntax-csv`,
       stateCsvUrl: `${base}/state-csv`,
@@ -218,6 +225,9 @@ exports.getTestRun = async (req, res) => {
         });
         return links;
       })(),
+      // New: persisted unfolded state tree (preferred for diagram)
+      stateTreeNodes: run.stateTreeNodes || [],
+      stateTreeLinks: run.stateTreeLinks || [],
 
       // Download URLs
       ecpCsvUrl: `${base}/ecp-csv`,
@@ -487,5 +497,6 @@ exports.downloadCombined = async (req, res) => {
     res.status(500).send('Server error');
   }
 };
+
 
 
