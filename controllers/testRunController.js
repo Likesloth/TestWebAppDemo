@@ -1,7 +1,8 @@
 // controllers/testRunController.js
 const ExcelJS = require('exceljs');
 const TestRun = require('../models/TestRun');
-const { generateAll } = require('./testGenController');
+const { generateAll } = require('../services/testGenService');
+const { buildGraphFromStateTests, buildSequenceDiagramFromSequences } = require('../services/mappers/diagramMapper');
 
 // POST /api/runs
 exports.createTestRun = async (req, res) => {
@@ -52,41 +53,9 @@ exports.createTestRun = async (req, res) => {
       combinedCsvData
     });
 
-    // Build GoJS model data
-    const stateSet = new Set();
-    (stateTests || []).forEach(tc => {
-      stateSet.add(tc.startState);
-      stateSet.add(tc.expectedState);
-    });
-    const nodes = Array.from(stateSet).map(key => ({ key }));
-
-    // Only draw links for valid singles (no event label in new schema)
-    const stateValidArr = (stateTests || []).filter(t => t.type === 'Valid');
-    const stateInvalidArr = (stateTests || []).filter(t => t.type === 'Invalid');
-
-    const links = stateValidArr.map(tc => ({
-      from: tc.startState,
-      to: tc.expectedState,
-      text: '' // no event in 5-col schema
-    }));
-
-    // Build a sequences-based tree (duplicate nodes per step to avoid cycles)
-    const seqNodeMap = new Map();
-    const seqLinks = [];
-    (stateSequences || []).forEach(s => {
-      const path = Array.isArray(s.sequence) ? s.sequence : [];
-      for (let i = 0; i < path.length; i++) {
-        const state = path[i];
-        const key = `${s.seqCaseID}:${String(i).padStart(2, '0')}:${state}`;
-        if (!seqNodeMap.has(key)) seqNodeMap.set(key, { key, label: state });
-        if (i > 0) {
-          const prev = path[i - 1];
-          const prevKey = `${s.seqCaseID}:${String(i - 1).padStart(2, '0')}:${prev}`;
-          seqLinks.push({ from: prevKey, to: key, text: '' });
-        }
-      }
-    });
-    const seqNodes = Array.from(seqNodeMap.values());
+    // Build GoJS model data via mappers
+    const { nodes, links } = buildGraphFromStateTests(stateTests || []);
+    const { seqNodes, seqLinks } = buildSequenceDiagramFromSequences(stateSequences || []);
 
     // 5) return metadata + URLs + diagram data
     const base = `${req.protocol}://${req.get('host')}/api/runs/${run._id}`;
@@ -97,8 +66,8 @@ exports.createTestRun = async (req, res) => {
       testCases,
       syntaxResults,
       stateTests,                 // ✅ primary
-      stateValid: stateValidArr,  // optional compatibility
-      stateInvalid: stateInvalidArr,
+      // Deprecated compatibility fields can be derived outside if needed
+      // stateValid / stateInvalid removed in favor of stateTests
       stateSequences,
       nodes,
       links,
