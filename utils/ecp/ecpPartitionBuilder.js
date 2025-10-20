@@ -38,17 +38,16 @@ module.exports = async function generatePartitions(dataDictionaryPath) {
         });
 
         buckets.forEach(b => {
-          items.push({
-            id:     b.id,
-            label:  `[${b.min}, ${b.max})`,
-            sample: b.mid
-          });
+          const label = (b.min === b.max)
+            ? String(b.min)
+            : `(${b.min}, ${b.max})`; // display with parentheses consistently
+          items.push({ id: b.id, label, sample: b.mid });
         });
 
         const lastMax = buckets[buckets.length - 1].max;
         items.push({
           id:     'overflow',
-          label:  `[${lastMax}, ∞)`,
+          label:  `(${lastMax}, ∞)`,
           sample: lastMax + randomBetween(1, lastMax)
         });
       }
@@ -70,11 +69,40 @@ module.exports = async function generatePartitions(dataDictionaryPath) {
   // 2) Partition for OUTPUT
   {
     const { varName, type } = outputMeta;
-    const items = actions.map(a => ({
-      id:     a.id,
-      label:  a.value,
-      sample: a.value
-    }));
+    // If output values are numeric, collapse into: [min-max], [None]
+    // Otherwise, keep original per-action buckets.
+    const numericActs = actions
+      .map(a => ({ id: a.id, valueStr: a.value, valueNum: Number(a.value) }))
+      .filter(a => Number.isFinite(a.valueNum));
+
+    let items = [];
+    if (numericActs.length === actions.length && numericActs.length > 0) {
+      // sort by numeric value and de-duplicate by value (keep first id)
+      const sorted = [...numericActs].sort((a, b) => a.valueNum - b.valueNum);
+      const unique = [];
+      const seen = new Set();
+      for (const a of sorted) {
+        if (!seen.has(a.valueNum)) {
+          unique.push(a);
+          seen.add(a.valueNum);
+        }
+      }
+
+      const min = unique[0];
+      const max = unique[unique.length - 1];
+
+      // Single range item covering min..max. Use combined id for traceability.
+      const rangeId = `${min.id}-${max.id}`;
+      const rangeLabel = (min.valueNum === max.valueNum)
+        ? String(min.valueNum)
+        : `(${min.valueNum}, ${max.valueNum})`;
+      items.push({ id: rangeId, label: rangeLabel, sample: min.valueNum });
+    } else {
+      // Non-numeric outputs: keep each as its own bucket
+      items = actions.map(a => ({ id: a.id, label: a.value, sample: a.value }));
+    }
+
+    // Always append a None bucket for outputs
     items.push({ id: 'none', label: 'None', sample: null });
     partitions.push({ name: varName, items });
   }
