@@ -1,16 +1,22 @@
-﻿// utils/testCaseGenerator.js
-const {
-  processDataDictionary,
-  processDecisionTree
-} = require('./ecpParser');
+﻿// utils/ecp/ecpInvalidGenerator.js
+// Purpose: Generate ONLY INVALID (negative) ECP test cases from the
+// Data Dictionary. Does not depend on the Decision Tree.
+// Exports: async function generateInvalidEcpCases(ddPath|Buffer) -> Array<TestCase>
+// TestCase shape: { testCaseID, type: 'Invalid', inputs: MapLike, expected: MapLike }
+// Strategy:
+//  - For Range inputs: produce underflow and overflow values.
+//  - For Nominal/Ordinal inputs: produce a None/null value if categories exist.
+// ID assignment is local (starts at 1); the service renumbers to follow valids.
+const { processDataDictionary } = require('./ecpXmlParsers');
 
-module.exports = async function generateTestCasesLogic(dataDictionaryPath, decisionTreePath) {
+// Generates ONLY invalid (negative) ECP cases based on the Data Dictionary.
+// It does not parse or depend on the Decision Tree.
+module.exports = async function generateInvalidEcpCases(dataDictionaryPath) {
   const {
-    inputsMeta,      // [{ varName, type }, �?�]
-    outputMeta,      // { varName, type }
-    rangeConditions, // [{ id, varName, min, max, mid }, �?�]
-    typeConditions,  // [{ id, varName, label }, �?�]
-    actions          // [{ id, value }, �?�]
+    inputsMeta,
+    outputMeta,
+    rangeConditions,
+    typeConditions
   } = await processDataDictionary(dataDictionaryPath);
 
   // Only consider inputs that actually participate in ECP via <Condition>
@@ -18,73 +24,8 @@ module.exports = async function generateTestCasesLogic(dataDictionaryPath, decis
   const ecpNomVars   = new Set(typeConditions.map(t => t.varName));
   const ecpVarSet    = new Set([...ecpRangeVars, ...ecpNomVars]);
 
-  const decisions = await processDecisionTree(decisionTreePath);
   const testCases = [];
 
-  const addInputFromConditionRef = (refId, target) => {
-    if (!refId) return false;
-    const range = rangeConditions.find(r => r.id === refId);
-    if (range) {
-      target[range.varName] = range.mid;
-      return true;
-    }
-    const nominal = typeConditions.find(t => t.id === refId);
-    if (nominal) {
-      target[nominal.varName] = nominal.label;
-      return true;
-    }
-    return false;
-  };
-
-  decisions.forEach((decision, idx) => {
-    const inputs   = {};
-    const expected = {};
-    let valid      = false;
-
-    // CASE A: single�??level rule: <Condition .../><ACTION .../> directly under <Decision>
-    if (decision.ACTION) {
-      const cond = decision.Condition;
-      const refid = cond?.$?.refid;
-      const hasInputs = addInputFromConditionRef(refid, inputs);
-      const act = actions.find(a => a.id === decision.ACTION.$?.refid);
-
-      if (act) {
-        expected[outputMeta.varName] = act.value;
-      }
-
-      valid = hasInputs && Boolean(act);
-    }
-    // CASE B: nested rule: <Condition><Condition><ACTION/></Condition></Condition>
-    else if (decision.Condition?.Condition) {
-      const outer = decision.Condition;
-      const inner = outer.Condition;
-      const outerRef = outer.$?.refid;
-      const innerRef = inner.$?.refid;
-      const actionNode = inner.ACTION || outer.ACTION;
-      const actRef = actionNode?.$?.refid;
-
-      let hasInputs = false;
-      hasInputs = addInputFromConditionRef(outerRef, inputs) || hasInputs;
-      hasInputs = addInputFromConditionRef(innerRef, inputs) || hasInputs;
-
-      const act = actions.find(a => a.id === actRef);
-      if (act) {
-        expected[outputMeta.varName] = act.value;
-      }
-
-      valid = hasInputs && Boolean(act);
-    }
-
-    if (valid) {
-      testCases.push({
-        testCaseID: `TC${String(idx + 1).padStart(3, '0')}`,
-        type: 'Valid',
-        inputs,
-        expected
-      });
-    }
-  });
-  
   // --- Add invalid/out-of-range partition cases (ECP negative tests) ---
   // Build a typical (baseline) input map (only for vars that have <Condition>)
   const baselineInputs = {};
@@ -110,8 +51,8 @@ module.exports = async function generateTestCasesLogic(dataDictionaryPath, decis
     return obj;
   }
   
-  // Determine next ID index
-  let nextIndex = testCases.length + 1;
+  // Determine next ID index (starts at 1; final renumbering happens in service)
+  let nextIndex = 1;
   const outVar = outputMeta?.varName;
   const mkExpected = (varName) => (outVar ? { [outVar]: `Invalid ${varName}` } : {});
   

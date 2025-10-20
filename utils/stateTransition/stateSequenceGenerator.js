@@ -1,4 +1,4 @@
-// utils/stateSequenceGenerator.js
+// utils/stateTransition/stateSequenceGenerator.js
 
 /**
  * Enumerate complete sequences from initial using DFS, stopping at terminals:

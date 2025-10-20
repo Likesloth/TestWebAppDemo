@@ -1,6 +1,14 @@
-﻿// backend/utils/ecpParser.js
+﻿// backend/utils/ecpXmlParsers.js
+// Purpose: Parse ECP-related XML files into plain JavaScript structures.
+// Exports:
+//  - processDataDictionary(inputXml): parses the Data Dictionary and returns
+//    { inputsMeta, outputMeta, rangeConditions, typeConditions, actions }
+//  - processDecisionTree(inputXml): parses the Decision Tree and returns
+//    an array of Decision nodes/rules used by legacy generators.
+// Inputs: Buffer (from uploads) or filesystem path string.
+// Used by: ecpPartitionBuilder (for partitions) and generators.
 
-const { parseXMLFile } = require('./xmlParser');
+const { parseXMLFile } = require('../xmlParser');
 
 /** Midpoint helper */
 function calculateMidpoint(min, max, dataType) {

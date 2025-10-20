@@ -1,5 +1,5 @@
 // backend/utils/stateParser.js
-const { parseXMLFile } = require('./xmlParser');
+const { parseXMLFile } = require('../xmlParser');
 
 /**
  * Reads a StateMachine XML (filepath or Buffer)

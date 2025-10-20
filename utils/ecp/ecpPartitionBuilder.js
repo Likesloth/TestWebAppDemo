@@ -1,5 +1,10 @@
-// backend/utils/partitionGenerator.js
-const { processDataDictionary } = require('./ecpParser');
+// backend/utils/ecp/ecpPartitionBuilder.js
+// Purpose: Build user-friendly ECP partitions for inputs/outputs from a
+// Data Dictionary, for display and sampling in the UI.
+// Exports: async function (dataDictionaryPath|Buffer) -> Array<Partition>
+// Partition shape: { name, items: [{ id, label, sample }] }
+// Notes: Adds underflow/overflow buckets for Range and a None bucket for Nominal.
+const { processDataDictionary } = require('./ecpXmlParsers');
 
 function randomBetween(min, max) {
   return Math.floor(Math.random() * (max - min)) + min;

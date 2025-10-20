@@ -1,4 +1,4 @@
-// backend/utils/syntaxTestGenerator.js
+// backend/utils/syntax/syntaxTestGenerator.js
 const RandExp = require('randexp');
 
 // Build symbol list from ASCII ranges:

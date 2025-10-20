@@ -1,7 +1,14 @@
-// utils/ecpMapGenerator.js
-// Map-based ECP parsing and valid test generation using xml2js
+// utils/ecpValidGenerator.js
+// Purpose: Generate VALID ECP test cases from Data Dictionary + Decision Tree
+// using a map-based pipeline.
+// Exports:
+//  - parseDataDictByMaps(dd): builds conditionMap and actionMap (+ partitions)
+//  - parseDecisionTreeByMaps(dt, conditionMap, actionMap): extracts rules
+//  - generateValidEcpFromRules(rules, conditionMap, actionMap): test cases
+//  - generateValidEcpFromFiles(dd, dt): high-level convenience (valid cases)
+// Inputs: Buffer or file path for XMLs. Output: Array<{ testCaseID, type, inputs, expected }> (type='Valid')
 
-const { parseXMLFile } = require('./xmlParser');
+const { parseXMLFile } = require('../xmlParser');
 
 const ensureArray = (x) => (Array.isArray(x) ? x : (x ? [x] : []));
 

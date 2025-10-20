@@ -1,5 +1,5 @@
 // backend/utils/syntaxParser.js
-const { parseXMLFile } = require('./xmlParser');
+const { parseXMLFile } = require('../xmlParser');
 
 function collectSyntaxEntries(target, defs, { fallbackName = '', fallbackType = '' } = {}) {
   if (!target || !target.Syntax) return;

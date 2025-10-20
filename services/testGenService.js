@@ -1,14 +1,14 @@
 // services/testGenService.js
 const { stringify } = require('csv-stringify/sync');
 
-const generatePartitions = require('../utils/partitionGenerator');
-const generateTestCasesLogic = require('../utils/testCaseGenerator');
-const { generateValidEcpFromFiles } = require('../utils/ecpMapGenerator');
-const { processSyntaxDefs } = require('../utils/syntaxParser');
-const { generateSyntaxTests } = require('../utils/syntaxTestGenerator');
-const { processStateDefs } = require('../utils/stateParser');
-const { buildTransitionMatrix } = require('../utils/stateMatrixGenerator');
-const { buildStateTree } = require('../utils/stateTreeBuilder');
+const buildEcpPartitions = require('../utils/ecp/ecpPartitionBuilder');
+const generateInvalidEcpCases = require('../utils/ecp/ecpInvalidGenerator');
+const { generateValidEcpFromFiles } = require('../utils/ecp/ecpValidGenerator');
+const { processSyntaxDefs } = require('../utils/syntax/syntaxParser');
+const { generateSyntaxTests } = require('../utils/syntax/syntaxTestGenerator');
+const { processStateDefs } = require('../utils/stateTransition/stateParser');
+const { buildTransitionMatrix } = require('../utils/stateTransition/stateMatrixGenerator');
+const { buildStateTree } = require('../utils/stateTransition/stateTreeBuilder');
 
 // helper: shape single-transition rows for UI/CSV (5 columns)
 function buildStateTestRows(validCases, invalidCases) {
@@ -49,17 +49,16 @@ module.exports.generateAll = async (
   stateMachinePath
 ) => {
   // 1) ECP
-  const partitions = await generatePartitions(dataDictionaryPath);
+  const partitions = await buildEcpPartitions(dataDictionaryPath);
   // Option B: Use map-based resolver for valid cases, merge with legacy invalids
   const validCases = await generateValidEcpFromFiles(
     dataDictionaryPath,
     decisionTreePath
   );
-  const legacyCases = await generateTestCasesLogic(
-    dataDictionaryPath,
-    decisionTreePath
+  // Generate only invalids from DD (decision tree not needed here)
+  const invalidCases = await generateInvalidEcpCases(
+    dataDictionaryPath
   );
-  const invalidCases = legacyCases.filter(tc => tc.type === 'Invalid');
   // Renumber invalids to continue after the last valid case ID
   const startIdx = validCases.length + 1;
   const renumberedInvalids = invalidCases.map((tc, i) => ({

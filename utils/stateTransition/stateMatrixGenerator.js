@@ -1,4 +1,4 @@
-// backend/utils/stateMatrixGenerator.js
+// backend/utils/stateTransition/stateMatrixGenerator.js
 function buildTransitionMatrix({
   states,
   transitions,
