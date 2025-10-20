@@ -82,8 +82,48 @@ function buildStateTree({
     nodes.push({ key, label: baseLabel });
     if (parentKey) links.push({ from: parentKey, to: key, text: incomingEvent || '' });
 
-    // --- stop at terminal/depth
-    if (isTerminal(baseLabel) || depth >= maxDepth) return;
+    // --- stop or special-expand at terminal/depth
+    if (depth >= maxDepth) return;
+
+    // If terminal, allow a single special-case expansion:
+    // Only for the path Initial -> Normal -> Retired, attach a Final node.
+    if (isTerminal(baseLabel)) {
+      const parentLower = String(parentLabel || '').toLowerCase();
+      const grandLower = String(lastStateLabel || '').toLowerCase();
+      const baseLower2 = String(baseLabel || '').toLowerCase();
+
+      if (
+        baseLower2 === 'retired' &&
+        parentLower === 'normal' &&
+        grandLower === 'initial'
+      ) {
+        const finalLabel = (Array.isArray(finalIds) && finalIds.length === 1)
+          ? finalIds[0]
+          : 'Final';
+
+        const nextBase = finalLabel;
+        const nextCount = (newVisit.get(nextBase) || 0) + 1;
+        if (nextCount > maxRepeatsPerState) {
+          const nextKey = makeKey(depth + 1, nextBase, nextCount);
+          nodes.push({ key: nextKey, label: nextBase });
+          links.push({ from: key, to: nextKey, text: '' });
+        } else {
+          const nextPath = [...(pathLabels || []), baseLabel];
+          dfs(
+            nextBase,
+            depth + 1,
+            key,
+            baseLabel,
+            parentLabel || null,
+            '',
+            newVisit,
+            nextPath,
+            inRecoveryBranch
+          );
+        }
+      }
+      return;
+    }
 
     const recoverySet = new Set((recoveryLabels || []).map(x => String(x).toLowerCase()));
     const stopSideSet = new Set((stopLabelsOnSide || []).map(x => String(x).toLowerCase()));
