@@ -122,9 +122,16 @@ exports.getTestRun = async (req, res) => {
 
     // Helper to extract from/to for any row
     const parseFromTo = (row) => {
-      if (row.transitionDescription && row.transitionDescription.includes('-->')) {
-        const [from, to] = row.transitionDescription.split('-->').map(s => s.trim());
-        return { from, to };
+      if (row.transitionDescription) {
+        const td = String(row.transitionDescription);
+        if (td.includes('→')) {
+          const [from, to] = td.split('→').map(s => s.trim());
+          return { from, to };
+        }
+        if (td.includes('-->')) {
+          const [from, to] = td.split('-->').map(s => s.trim());
+          return { from, to };
+        }
       }
       // Fallback (older data)
       const from = (row.startState || '').trim();
@@ -273,7 +280,7 @@ exports.downloadStateCsv = async (req, res) => {
         type: 'Valid',
         testCaseID: id,
         startState: tc.startState,
-        transitionDescription: tc.transitionDescription || `${tc.startState} --> ${tc.expectedState}`,
+        transitionDescription: tc.transitionDescription || `${tc.startState} → ${tc.expectedState}`,
         expectedState: tc.expectedState,
         coverage: counter / totalSingles
       });
@@ -288,7 +295,7 @@ exports.downloadStateCsv = async (req, res) => {
         type: 'Invalid',
         testCaseID: id,
         startState: tc.startState,
-        transitionDescription: tc.transitionDescription || `${tc.startState} --> ${to}`,
+        transitionDescription: tc.transitionDescription || `${tc.startState} → ${to}`,
         expectedState: to,
         coverage: counter / totalSingles
       });
@@ -407,7 +414,7 @@ exports.downloadCombined = async (req, res) => {
         type: 'Valid',
         testCaseID: id,
         startState: tc.startState,
-        transitionDescription: tc.transitionDescription || `${tc.startState} --> ${tc.expectedState}`,
+        transitionDescription: tc.transitionDescription || `${tc.startState} → ${tc.expectedState}`,
         expectedState: tc.expectedState,
         coverage: counter / totalSingles
       });
@@ -422,7 +429,7 @@ exports.downloadCombined = async (req, res) => {
         type: 'Invalid',
         testCaseID: id,
         startState: tc.startState,
-        transitionDescription: tc.transitionDescription || `${tc.startState} --> ${to}`,
+        transitionDescription: tc.transitionDescription || `${tc.startState} → ${to}`,
         expectedState: to,
         coverage: counter / totalSingles
       });

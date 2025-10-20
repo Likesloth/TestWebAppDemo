@@ -21,7 +21,7 @@ function buildStateTestRows(validCases, invalidCases) {
     testCaseID: `TC${String(index + 1).padStart(3, '0')}`,
     type: row.type,
     startState: row.from,
-    transitionDescription: `${row.from} --> ${row.to}`,
+    transitionDescription: `${row.from} → ${row.to}`,
     // IMPORTANT: for invalid we still set expectedState = attempted destination
     expectedState: row.to
   }));
