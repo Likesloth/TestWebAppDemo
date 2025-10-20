@@ -8,14 +8,14 @@ const { buildGraphFromStateTests, buildSequenceDiagramFromSequences } = require(
 exports.createTestRun = async (req, res) => {
   try {
     // 1) grab buffers from multer.memoryStorage()
-    const ddBuffer = req.files.dataDictionary[0].buffer;
-    const dtBuffer = req.files.decisionTree[0].buffer;
-    const smBuffer = req.files.stateMachine?.[0]?.buffer; // optional
+    const dataDictionaryBuffer = req.files.dataDictionary[0].buffer;
+    const decisionTreeBuffer = req.files.decisionTree[0].buffer;
+    const stateMachineBuffer = req.files.stateMachine?.[0]?.buffer; // optional
 
     // original filenames for metadata
-    const ddName = req.files.dataDictionary[0].originalname;
-    const dtName = req.files.decisionTree[0].originalname;
-    const stName = req.files.stateMachine?.[0]?.originalname || null;
+    const dataDictionaryFilename = req.files.dataDictionary[0].originalname;
+    const decisionTreeFilename = req.files.decisionTree[0].originalname;
+    const stateMachineFilename = req.files.stateMachine?.[0]?.originalname || null;
 
     // 2) generate everything (✅ use stateTests/stateSequences)
     const {
@@ -31,14 +31,14 @@ exports.createTestRun = async (req, res) => {
       stateCsvData,
       stateSeqCsvData,
       combinedCsvData
-    } = await generateAll(ddBuffer, dtBuffer, smBuffer);
+    } = await generateAll(dataDictionaryBuffer, decisionTreeBuffer, stateMachineBuffer);
 
     // 3) persist to Mongo (✅ store stateTests directly)
     const run = await TestRun.create({
       user: req.user.id,
-      dataDictionaryFilename: ddName,
-      decisionTreeFilename: dtName,
-      stateTransitionFilename: stName,
+      dataDictionaryFilename,
+      decisionTreeFilename,
+      stateTransitionFilename: stateMachineFilename,
       partitions,
       testCases,
       syntaxResults,

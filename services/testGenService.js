@@ -13,12 +13,12 @@ const { buildStateTree } = require('../utils/stateTransition/stateTreeBuilder');
 // helper: shape single-transition rows for UI/CSV (5 columns)
 function buildStateTestRows(validCases, invalidCases) {
   const merged = [
-    ...validCases.map(v => ({ type: 'Valid', from: v.from, to: v.to })),
-    ...invalidCases.map(i => ({ type: 'Invalid', from: i.from, to: i.to }))
+    ...validCases.map(validCase => ({ type: 'Valid', from: validCase.from, to: validCase.to })),
+    ...invalidCases.map(invalidCase => ({ type: 'Invalid', from: invalidCase.from, to: invalidCase.to }))
   ];
 
-  return merged.map((row, idx) => ({
-    testCaseID: `TC${String(idx + 1).padStart(3, '0')}`,
+  return merged.map((row, index) => ({
+    testCaseID: `TC${String(index + 1).padStart(3, '0')}`,
     type: row.type,
     startState: row.from,
     transitionDescription: `${row.from} --> ${row.to}`,
@@ -27,7 +27,7 @@ function buildStateTestRows(validCases, invalidCases) {
   }));
 }
 
-function shouldForceExcelText(name, value) {
+function shouldForceExcelText(fieldName, value) {
   if (typeof value !== 'string') return false;
   const trimmed = value.trim();
   if (/^\d{15,}$/.test(trimmed)) return true;
@@ -35,9 +35,9 @@ function shouldForceExcelText(name, value) {
   return false;
 }
 
-function ensureExcelText(name, value) {
+function ensureExcelText(fieldName, value) {
   if (typeof value !== 'string') return value;
-  if (!shouldForceExcelText(name, value)) return value;
+  if (!shouldForceExcelText(fieldName, value)) return value;
   if (value.startsWith('="')) return value;
   const escaped = value.replace(/"/g, '""');
   return `="${escaped}"`;
@@ -107,13 +107,13 @@ module.exports.generateAll = async (
     ];
 
     const totalSingles = Math.max(stateTests.length, 1);
-    const singleRows = stateTests.map((r, i) => [
-      r.testCaseID,
-      r.type,
-      r.startState,
-      r.transitionDescription,
-      r.expectedState,
-      `${(((i + 1) / totalSingles) * 100).toFixed(2)}%`
+    const singleRows = stateTests.map((row, index) => [
+      row.testCaseID,
+      row.type,
+      row.startState,
+      row.transitionDescription,
+      row.expectedState,
+      `${(((index + 1) / totalSingles) * 100).toFixed(2)}%`
     ]);
 
     stateCsvData = stringify([singleHeader, ...singleRows]);
@@ -135,13 +135,13 @@ module.exports.generateAll = async (
     // 3.3) sequences derived from the tree (root-to-leaf paths by labels)
     const adj = new Map(); // key -> [{toKey, event}]
     const incoming = new Map();
-    for (const l of stateTreeLinks) {
-      if (!adj.has(l.from)) adj.set(l.from, []);
-      adj.get(l.from).push({ to: l.to, event: l.text || '' });
-      incoming.set(l.to, (incoming.get(l.to) || 0) + 1);
-      if (!incoming.has(l.from)) incoming.set(l.from, incoming.get(l.from) || 0);
+    for (const link of stateTreeLinks) {
+      if (!adj.has(link.from)) adj.set(link.from, []);
+      adj.get(link.from).push({ to: link.to, event: link.text || '' });
+      incoming.set(link.to, (incoming.get(link.to) || 0) + 1);
+      if (!incoming.has(link.from)) incoming.set(link.from, incoming.get(link.from) || 0);
     }
-    const nodeByKey = new Map((stateTreeNodes || []).map(n => [n.key, n]));
+    const nodeByKey = new Map((stateTreeNodes || []).map(node => [node.key, node]));
 
     // choose root: prefer node with label == initialId (or 'Initial'), else any with no incoming
     let roots = Array.from((stateTreeNodes || []).map(n => n.key).filter(k => (incoming.get(k) || 0) === 0));
@@ -152,8 +152,8 @@ module.exports.generateAll = async (
     const seqSet = new Set();
     const seqList = [];
     const seqFormatted = [];
-    function dfsTree(k, pathLabels, pathEvents) {
-      const children = adj.get(k) || [];
+    function dfsTree(nodeKey, pathLabels, pathEvents) {
+      const children = adj.get(nodeKey) || [];
       if (children.length === 0) {
         const seqKey = pathLabels.join('→');
         if (!seqSet.has(seqKey)) {
@@ -163,9 +163,9 @@ module.exports.generateAll = async (
           const text = (() => {
             if (!Array.isArray(pathEvents) || pathEvents.length === 0) return labels.join(' → ');
             const parts = [labels[0]];
-            for (let i = 0; i < pathEvents.length; i++) {
-              const ev = pathEvents[i];
-              parts.push(ev ? `-(${ev})->` : '->', labels[i + 1]);
+            for (let index = 0; index < pathEvents.length; index++) {
+              const eventLabel = pathEvents[index];
+              parts.push(eventLabel ? `-(${eventLabel})->` : '->', labels[index + 1]);
             }
             return parts.join(' ');
           })();
@@ -173,13 +173,13 @@ module.exports.generateAll = async (
         }
         return;
       }
-      for (const ch of children) {
-        const node = nodeByKey.get(ch.to);
-        const lbl = node ? node.label : ch.to;
+      for (const child of children) {
+        const node = nodeByKey.get(child.to);
+        const lbl = node ? node.label : child.to;
         pathLabels.push(lbl);
         const evs = Array.isArray(pathEvents) ? pathEvents : [];
-        evs.push(ch.event || '');
-        dfsTree(ch.to, pathLabels, evs);
+        evs.push(child.event || '');
+        dfsTree(child.to, pathLabels, evs);
         evs.pop();
         pathLabels.pop();
       }
@@ -190,19 +190,19 @@ module.exports.generateAll = async (
     } else {
       const rootLabel = nodeByKey.get(rootKey)?.label || 'Initial';
       dfsTree(rootKey, [rootLabel], []);
-      stateSequences = seqList.map((seq, i) => ({
-        seqCaseID: `TC${String(i + 1).padStart(3, '0')}`,
-        sequence: seq
+      stateSequences = seqList.map((sequence, index) => ({
+        seqCaseID: `TC${String(index + 1).padStart(3, '0')}`,
+        sequence
       }));
     }
 
     // sequences CSV (with Coverage)
     const seqHeader = ['Test Case ID', 'Sequence (events)', 'Coverage (%)'];
     const totalSeq = Math.max(stateSequences.length, 1);
-    const seqRows = stateSequences.map((s, i) => [
-      `TC${String(i + 1).padStart(3, '0')}`,
-      (seqFormatted && seqFormatted[i]) ? seqFormatted[i] : s.sequence.join(' → '),
-      `${(((i + 1) / totalSeq) * 100).toFixed(2)}%`
+    const seqRows = stateSequences.map((sequenceItem, index) => [
+      `TC${String(index + 1).padStart(3, '0')}`,
+      (seqFormatted && seqFormatted[index]) ? seqFormatted[index] : sequenceItem.sequence.join(' → '),
+      `${(((index + 1) / totalSeq) * 100).toFixed(2)}%`
     ]);
     stateSeqCsvData = stringify([seqHeader, ...seqRows]);
   }
@@ -223,15 +223,15 @@ module.exports.generateAll = async (
 
   // 5) Syntax CSV
   const synHeader = ['Name', 'valid', 'invalidValue', 'invalidOmission', 'invalidAddition', 'invalidSubstitution'];
-  const synRows = syntaxResults.map(sr => {
-    const values = sr.testCases;
+  const synRows = syntaxResults.map(syntaxItem => {
+    const values = syntaxItem.testCases;
     return [
-      sr.name,
-      ensureExcelText(sr.name, values.valid),
-      ensureExcelText(sr.name, values.invalidValue),
-      ensureExcelText(sr.name, values.invalidOmission),
-      ensureExcelText(sr.name, values.invalidAddition),
-      ensureExcelText(sr.name, values.invalidSubstitution)
+      syntaxItem.name,
+      ensureExcelText(syntaxItem.name, values.valid),
+      ensureExcelText(syntaxItem.name, values.invalidValue),
+      ensureExcelText(syntaxItem.name, values.invalidOmission),
+      ensureExcelText(syntaxItem.name, values.invalidAddition),
+      ensureExcelText(syntaxItem.name, values.invalidSubstitution)
     ];
   });
   const syntaxCsvData = stringify([synHeader, ...synRows]);
@@ -249,31 +249,31 @@ module.exports.generateAll = async (
   ];
 
   // Map single transitions to "State" rows in combined (Event column unused, pass empty)
-  const combinedStateRows = stateTests.map(r => [
+  const combinedStateRows = stateTests.map(row => [
     'State',
     ...Array(ecpHeader.length + synHeader.length).fill(''),
-    r.type,
-    r.testCaseID,
-    r.transitionDescription, // put full "from --> to" in Start/Path
+    row.type,
+    row.testCaseID,
+    row.transitionDescription, // put full "from --> to" in Start/Path
     '',                      // Event (unused in new table)
-    r.expectedState
+    row.expectedState
   ]);
 
   // Map sequences to "Seq" rows in combined (fill coverage in last column)
   const totalSeqForCombined = Math.max(stateSequences.length, 1);
-  const combinedSeqRows = stateSequences.map((s, i) => [
+  const combinedSeqRows = stateSequences.map((sequenceItem, index) => [
     'Seq',
     ...Array(ecpHeader.length + synHeader.length).fill(''),
     'Sequence',
-    s.seqCaseID || '',
-    s.sequence.join(' → '),
+    sequenceItem.seqCaseID || '',
+    sequenceItem.sequence.join(' → '),
     '',
-    `${(((i + 1) / totalSeqForCombined) * 100).toFixed(2)}%`
+    `${(((index + 1) / totalSeqForCombined) * 100).toFixed(2)}%`
   ]);
 
   const combinedRows = [
-    ...ecpRows.map(r => ['ECP', ...r, ...Array(synHeader.length).fill(''), '', '', '', '', '']),
-    ...synRows.map(r => ['Syntax', ...Array(ecpHeader.length).fill(''), ...r, '', '', '', '', '']),
+    ...ecpRows.map(row => ['ECP', ...row, ...Array(synHeader.length).fill(''), '', '', '', '', '']),
+    ...synRows.map(row => ['Syntax', ...Array(ecpHeader.length).fill(''), ...row, '', '', '', '', '']),
     ...combinedStateRows,
     ...combinedSeqRows
   ];
