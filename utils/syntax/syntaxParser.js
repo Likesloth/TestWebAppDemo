@@ -1,25 +1,29 @@
-// backend/utils/syntaxParser.js
+// backend/utils/syntax/syntaxParser.js
+// Purpose: Parse <Syntax> definitions from a Data Dictionary XML into
+// plain JavaScript objects usable for test generation.
+// Exports: { processSyntaxDefs(inputXml) }
+// Input can be a Buffer (uploaded) or a filesystem path string.
 const { parseXMLFile } = require('../xmlParser');
 
-function collectSyntaxEntries(target, defs, { fallbackName = '', fallbackType = '' } = {}) {
+function collectSyntaxEntries(target, definitions, { fallbackName = '', fallbackType = '' } = {}) {
   if (!target || !target.Syntax) return;
 
   const syntaxes = Array.isArray(target.Syntax)
     ? target.Syntax
     : [target.Syntax];
 
-  syntaxes.forEach(syn => {
-    if (!syn) return;
-    const attrs = syn.$ || {};
-    const pattern = attrs.Pattern ?? syn.Pattern;
+  syntaxes.forEach(syntaxNode => {
+    if (!syntaxNode) return;
+    const attributes = syntaxNode.$ || {};
+    const pattern = attributes.Pattern ?? syntaxNode.Pattern;
     if (!pattern) return;
 
-    defs.push({
+    definitions.push({
       name: fallbackName,
       description: fallbackName,
       pattern,
-      type: attrs.Type ?? fallbackType ?? '',
-      length: attrs.Length ?? ''
+      type: attributes.Type ?? fallbackType ?? '',
+      length: attributes.Length ?? ''
     });
   });
 }
@@ -43,24 +47,24 @@ async function processSyntaxDefs(inputXml) {
     ? usecase.Input
     : [usecase.Input];
 
-  const defs = [];
+  const definitions = [];
 
   inputs.forEach(input => {
     if (!input) return;
-    collectSyntaxEntries(input, defs, {
+    collectSyntaxEntries(input, definitions, {
       fallbackName: input.Varname,
       fallbackType: input.DataType ?? ''
     });
   });
 
   if (usecase.Output) {
-    collectSyntaxEntries(usecase.Output, defs, {
+    collectSyntaxEntries(usecase.Output, definitions, {
       fallbackName: usecase.Output.Varname || 'Output',
       fallbackType: usecase.Output.DataType ?? ''
     });
   }
 
-  return defs;
+  return definitions;
 }
 
 module.exports = { processSyntaxDefs };
