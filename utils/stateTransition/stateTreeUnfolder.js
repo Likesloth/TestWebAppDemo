@@ -1,9 +1,10 @@
 /**
- * Build a tree-like unfolding of a state machine graph.
+ * Purpose: Build a tree-like unfolding of a state machine graph.
  * - Duplicates node per occurrence (no reuse), unique keys per position
  * - Labels links with events
  * - Stops at finals or maxDepth
  * - Optional trivial bounce filter (A->B->A)
+ * Returns: { nodes: [{ key, label }], links: [{ from, to, text }] }
  */
 function buildStateTree({
   transitions = [],
@@ -20,37 +21,37 @@ function buildStateTree({
   stopLabelsOnSide = ['First Pro']
 }) {
   // --- determine start node
-  const hasFrom = (name) => transitions.some(t => t && t.from === name);
+  const hasFrom = (name) => transitions.some(transition => transition && transition.from === name);
   const startCandidates = [];
   if (initialId && typeof initialId === 'string') {
     startCandidates.push(initialId, initialId.toLowerCase(), initialId.charAt(0).toUpperCase() + initialId.slice(1));
   }
   startCandidates.push('initial', 'Initial');
-  const start = startCandidates.find(c => hasFrom(c)) || (initialId || 'initial');
+  const startLabel = startCandidates.find(c => hasFrom(c)) || (initialId || 'initial');
 
-  const finals = new Set(finalIds || []);
+  const finalLabels = new Set(finalIds || []);
 
   // --- adjacency map
   const graph = new Map();
-  for (const t of transitions) {
-    if (!t || typeof t.from !== 'string') continue;
-    if (!graph.has(t.from)) graph.set(t.from, []);
-    graph.get(t.from).push({ from: t.from, to: t.to, event: t.event || '' });
+  for (const transition of transitions) {
+    if (!transition || typeof transition.from !== 'string') continue;
+    if (!graph.has(transition.from)) graph.set(transition.from, []);
+    graph.get(transition.from).push({ from: transition.from, to: transition.to, event: transition.event || '' });
   }
 
   const nodes = [];
   const links = [];
-  let counter = 0;
+  let nodeCounter = 0;
   const expandedOnce = new Set();
 
   const makeKey = (depth, baseLabel, dupIndex) => {
     const suffix = appendDuplicateIndex && dupIndex > 1 ? `_${dupIndex}` : '';
-    return `TREE:${String(counter++).padStart(4, '0')}:${String(depth).padStart(2, '0')}:${baseLabel}${suffix}`;
+    return `TREE:${String(nodeCounter++).padStart(4, '0')}:${String(depth).padStart(2, '0')}:${baseLabel}${suffix}`;
   };
 
   const isTerminal = (label) => {
     const l = String(label).toLowerCase();
-    if (finals.has(label)) return true;
+    if (finalLabels.has(label)) return true;
     if (l === 'final') return true;
     if (treatRetiredAsTerminal && l === 'retired') return true;
     return false;
@@ -98,36 +99,36 @@ function buildStateTree({
     const parentIsRecovery = recoverySet.has(String(parentLabel || '').toLowerCase());
     if (newInRecoveryBranch && !parentIsRecovery && stopSideSet.has(baseLower)) return;
 
-    const outs = graph.get(baseLabel) || [];
+    const outgoingTransitions = graph.get(baseLabel) || [];
 
     // --- Global expand-once (context-aware)
     if (expandOnceGlobally) {
       const contextKey = `${baseLower}::${newInRecoveryBranch ? 'main' : 'side'}`;
       if (expandedOnce.has(contextKey)) return;
-      if (outs.length) expandedOnce.add(contextKey);
+      if (outgoingTransitions.length) expandedOnce.add(contextKey);
     }
 
     // --- Sort transitions for stable layout
-    outs.sort(
+    outgoingTransitions.sort(
       (a, b) =>
         String(a.event).localeCompare(String(b.event)) ||
         String(a.to).localeCompare(String(b.to))
     );
 
-    for (const tr of outs) {
+    for (const transitionEdge of outgoingTransitions) {
       // Only skip immediate back-edge to the direct parent (A -> B -> A),
       // BUT allow it when bouncing back to a recovery label (e.g., Normal/Pass)
-      if (filterBounce && parentLabel && tr.to === parentLabel) {
-        const toLower = String(tr.to).toLowerCase();
+      if (filterBounce && parentLabel && transitionEdge.to === parentLabel) {
+        const toLower = String(transitionEdge.to).toLowerCase();
         if (!recoverySet.has(toLower)) continue;
       }
 
-      const nextBase = tr.to;
+      const nextBase = transitionEdge.to;
       const nextCount = (newVisit.get(nextBase) || 0) + 1;
       if (nextCount > maxRepeatsPerState) {
         const nextKey = makeKey(depth + 1, nextBase, nextCount);
         nodes.push({ key: nextKey, label: nextBase });
-        links.push({ from: key, to: nextKey, text: tr.event || '' });
+        links.push({ from: key, to: nextKey, text: transitionEdge.event || '' });
         continue;
       }
 
@@ -138,7 +139,7 @@ function buildStateTree({
         key,
         baseLabel,
         parentLabel || null,
-        tr.event || '',
+        transitionEdge.event || '',
         newVisit,
         nextPath,
         newInRecoveryBranch
@@ -146,7 +147,7 @@ function buildStateTree({
     }
   }
 
-  dfs(start, 0, null, null, null, '', new Map(), [], false);
+  dfs(startLabel, 0, null, null, null, '', new Map(), [], false);
 
   return { nodes, links };
 }

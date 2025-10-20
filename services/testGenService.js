@@ -6,9 +6,9 @@ const generateInvalidEcpCases = require('../utils/ecp/ecpInvalidGenerator');
 const { generateValidEcpFromFiles } = require('../utils/ecp/ecpValidGenerator');
 const { processSyntaxDefs } = require('../utils/syntax/syntaxParser');
 const { generateSyntaxTests } = require('../utils/syntax/syntaxTestGenerator');
-const { processStateDefs } = require('../utils/stateTransition/stateParser');
-const { buildTransitionMatrix } = require('../utils/stateTransition/stateMatrixGenerator');
-const { buildStateTree } = require('../utils/stateTransition/stateTreeBuilder');
+const { processStateDefs } = require('../utils/stateTransition/stateMachineXmlParser');
+const { buildTransitionMatrix } = require('../utils/stateTransition/stateTransitionMatrixBuilder');
+const { buildStateTree } = require('../utils/stateTransition/stateTreeUnfolder');
 
 // helper: shape single-transition rows for UI/CSV (5 columns)
 function buildStateTestRows(validCases, invalidCases) {

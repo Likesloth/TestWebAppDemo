@@ -1,4 +1,7 @@
-// utils/stateTransition/stateSequenceGenerator.js
+// utils/stateTransition/stateSequenceEnumerator.js
+// Purpose: Enumerate complete state sequences from the initial state using DFS,
+// stopping at terminal or soft-terminal conditions.
+// Exports: { enumerateStateSequences({ transitions, initialId, finalIds, ... }) }
 
 /**
  * Enumerate complete sequences from initial using DFS, stopping at terminals:
@@ -23,41 +26,41 @@ function enumerateStateSequences({
   }
 
   const finalSet = new Set(finalIds);
-  const softSet = new Set(softTerminals.map(s => s.toLowerCase()));
-  const recoverySet = new Set(recoveryLabels.map(s => s.toLowerCase()));
+  const softTerminalSet = new Set(softTerminals.map(label => label.toLowerCase()));
+  const recoverySet = new Set(recoveryLabels.map(label => label.toLowerCase()));
 
   const isTerminal = (state, path) => {
     const lower = state.toLowerCase();
     if (finalSet.has(state)) return true;
-    if (softSet.has(lower)) return true;
-    const outs = graph.get(state) || [];
-    if (!outs.length) return true;
+    if (softTerminalSet.has(lower)) return true;
+    const outgoingTransitions = graph.get(state) || [];
+    if (!outgoingTransitions.length) return true;
 
     // stop when re-entering recovery
-    if (path.some(p => recoverySet.has(p.toLowerCase()) && p !== state && recoverySet.has(lower)))
+    if (path.some(visitedState => recoverySet.has(visitedState.toLowerCase()) && visitedState !== state && recoverySet.has(lower)))
       return true;
 
     // stop when all next transitions lead to visited states
     const pathSet = new Set(path);
-    const hasNewFrontier = outs.some(e => !pathSet.has(e.to));
+    const hasNewFrontier = outgoingTransitions.some(edge => !pathSet.has(edge.to));
     return !hasNewFrontier;
   };
 
   const results = [];
-  const seen = new Set();
-  let id = 1;
+  const seenPaths = new Set();
+  let sequenceIndex = 1;
 
   const dfs = (state, path) => {
     if (path.length > maxDepth || isTerminal(state, path)) {
       const key = path.join('→');
-      if (!seen.has(key)) {
-        seen.add(key);
-        results.push({ seqCaseID: `TC${String(id++).padStart(3, '0')}`, sequence: [...path] });
+      if (!seenPaths.has(key)) {
+        seenPaths.add(key);
+        results.push({ seqCaseID: `TC${String(sequenceIndex++).padStart(3, '0')}`, sequence: [...path] });
       }
       return;
     }
-    const outs = graph.get(state) || [];
-    for (const { to } of outs) {
+    const outgoing = graph.get(state) || [];
+    for (const { to } of outgoing) {
       if (path.includes(to)) continue; // don’t revisit
       dfs(to, [...path, to]);
     }

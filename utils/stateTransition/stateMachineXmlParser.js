@@ -1,4 +1,9 @@
-// backend/utils/stateParser.js
+// backend/utils/stateTransition/stateMachineXmlParser.js
+// Purpose: Parse a state machine XML into plain structures used by the
+// state utilities and service layer.
+// Exports: { processStateDefs(inputXml) }
+// Returns: { initialId, finalIds, states, events, transitions }
+// - transitions: Array<{ from, event, to }>
 const { parseXMLFile } = require('../xmlParser');
 
 /**
@@ -24,13 +29,13 @@ async function processStateDefs(inputXml) {
   }
 
   // normalize helpers
-  const arrify = (v) => (Array.isArray(v) ? v : v ? [v] : []);
+  const arrify = (value) => (Array.isArray(value) ? value : value ? [value] : []);
 
   // collect finals first (may be multiple <final/>)
   const finalsRaw = arrify(root.final);
   const finalIds = finalsRaw
-    .filter((n) => n && n.$ && n.$.id)
-    .map((n) => n.$.id);
+    .filter((finalNode) => finalNode && finalNode.$ && finalNode.$.id)
+    .map((finalNode) => finalNode.$.id);
 
   const states = [];
   const events = new Set();
@@ -59,35 +64,35 @@ async function processStateDefs(inputXml) {
 
   // initial transitions
   if (initialNode && initialNode.transition) {
-    const trans = arrify(initialNode.transition);
-    trans.forEach((t) => {
-      const ev = t?.$?.event;
-      const to = mapTarget(t?.$?.target);
-      if (ev) events.add(ev);
+    const initialTransitions = arrify(initialNode.transition);
+    initialTransitions.forEach((transitionNode) => {
+      const eventName = transitionNode?.$?.event;
+      const targetId = mapTarget(transitionNode?.$?.target);
+      if (eventName) events.add(eventName);
       transitions.push({
         from: initialId || 'Initial',
-        event: ev || '',
-        to: to || '',
+        event: eventName || '',
+        to: targetId || '',
       });
     });
   }
 
   // each <state>
   const statesArray = arrify(root.state);
-  statesArray.forEach((s) => {
-    const sid = s?.$?.id;
-    if (!sid) return;
-    states.push(sid);
+  statesArray.forEach((stateNode) => {
+    const stateId = stateNode?.$?.id;
+    if (!stateId) return;
+    states.push(stateId);
 
-    const trans = arrify(s.transition);
-    trans.forEach((t) => {
-      const ev = t?.$?.event;
-      const to = mapTarget(t?.$?.target);
-      if (ev) events.add(ev);
+    const stateTransitions = arrify(stateNode.transition);
+    stateTransitions.forEach((transitionNode) => {
+      const eventName = transitionNode?.$?.event;
+      const targetId = mapTarget(transitionNode?.$?.target);
+      if (eventName) events.add(eventName);
       transitions.push({
-        from: sid,
-        event: ev || '',
-        to: to || '',
+        from: stateId,
+        event: eventName || '',
+        to: targetId || '',
       });
     });
   });

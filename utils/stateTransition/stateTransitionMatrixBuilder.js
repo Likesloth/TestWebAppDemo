@@ -1,4 +1,8 @@
-// backend/utils/stateTransition/stateMatrixGenerator.js
+// backend/utils/stateTransition/stateTransitionMatrixBuilder.js
+// Purpose: Build a state-transition matrix and derive valid/invalid single-step cases.
+// Exports: { buildTransitionMatrix({ states, transitions, initial, finals, includeInitialToFinalInvalid }) }
+// - Returns { matrix, validCases, invalidCases }
+// - Each valid case aggregates events on an edge; invalid cases include a reason.
 function buildTransitionMatrix({
   states,
   transitions,
@@ -16,16 +20,17 @@ function buildTransitionMatrix({
     if (event) edgeMap.get(key).add(event);
   }
 
-  const order = orderStates(states, initial, finalsSet);
+  const stateOrder = orderStates(states, initial, finalsSet);
 
   const matrix = [];
   const validCases = [];
   const invalidCases = [];
-  let vc = 1, ic = 1;
+  let validCounter = 1;
+  let invalidCounter = 1;
 
-  for (const from of order) {
+  for (const from of stateOrder) {
     const row = { from, cells: [] };
-    for (const to of order) {
+    for (const to of stateOrder) {
       let kind = 'invalid';
       let id = null;
 
@@ -39,7 +44,7 @@ function buildTransitionMatrix({
         kind = 'dash';
       } else {
         kind = 'invalid';
-        id = `IC${String(ic++).padStart(2, '0')}`;
+        id = `IC${String(invalidCounter++).padStart(2, '0')}`;
       }
 
       row.cells.push({ to, kind, id });
@@ -53,7 +58,7 @@ function buildTransitionMatrix({
       if (kind === 'valid') {
         const events = Array.from(edgeMap.get(`${row.from}::${to}`) || []);
         validCases.push({
-          testCaseID: `VC${String(vc++).padStart(2, '0')}`,
+          testCaseID: `VC${String(validCounter++).padStart(2, '0')}`,
           from: row.from,
           to,
           event: events.length ? events.join(' / ') : '',
@@ -76,9 +81,9 @@ function buildTransitionMatrix({
 }
 
 function orderStates(states, initial, finalsSet) {
-  const mids = states.filter(s => s !== initial && !finalsSet.has(s));
-  const fins = states.filter(s => finalsSet.has(s));
-  return [initial, ...mids, ...fins];
+  const middleStates = states.filter(state => state !== initial && !finalsSet.has(state));
+  const finalStates = states.filter(state => finalsSet.has(state));
+  return [initial, ...middleStates, ...finalStates];
 }
 
 module.exports = { buildTransitionMatrix };
