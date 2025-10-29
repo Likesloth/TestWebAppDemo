@@ -1,5 +1,6 @@
 // controllers/testRunController.js
 const ExcelJS = require('exceljs');
+const { stringify } = require('csv-stringify/sync');
 const TestRun = require('../models/TestRun');
 const { generateAll } = require('../services/testGenService');
 const { buildGraphFromStateTests, buildSequenceDiagramFromSequences } = require('../services/mappers/diagramMapper');
@@ -9,24 +10,26 @@ exports.createTestRun = async (req, res) => {
   try {
     // 1) grab buffers from multer.memoryStorage()
     const dataDictionaryBuffer = req.files.dataDictionary[0].buffer;
-    const decisionTreeBuffer = req.files.decisionTree[0].buffer;
+    const decisionTreeBuffer = req.files.decisionTree?.[0]?.buffer; // optional for cross-product only
     const stateMachineBuffer = req.files.stateMachine?.[0]?.buffer; // optional
 
     // original filenames for metadata
     const dataDictionaryFilename = req.files.dataDictionary[0].originalname;
-    const decisionTreeFilename = req.files.decisionTree[0].originalname;
+    const decisionTreeFilename = req.files.decisionTree?.[0]?.originalname || null;
     const stateMachineFilename = req.files.stateMachine?.[0]?.originalname || null;
 
     // 2) generate everything (✅ use stateTests/stateSequences)
     const {
       partitions,
       testCases,
+      crossProductCases,
       syntaxResults,
       stateTests,        // ✅ new single array of 5-col rows
       stateSequences,    // ✅ sequences
       stateTreeNodes,    // ✅ unfolded tree nodes
       stateTreeLinks,    // ✅ unfolded tree links
       ecpCsvData,
+      ecpCrossCsvData,
       syntaxCsvData,
       stateCsvData,
       stateSeqCsvData,
@@ -42,11 +45,13 @@ exports.createTestRun = async (req, res) => {
       partitions,
       testCases,
       syntaxResults,
+      crossProductCases,
       stateTests,
       stateSequences,
       stateTreeNodes,
       stateTreeLinks,
       ecpCsvData,
+      ecpCrossCsvData,
       syntaxCsvData,
       stateCsvData,
       stateSeqCsvData,
@@ -66,6 +71,7 @@ exports.createTestRun = async (req, res) => {
       testCases,
       syntaxResults,
       stateTests,                 // ✅ primary
+      crossProductCases,
       // Deprecated compatibility fields can be derived outside if needed
       // stateValid / stateInvalid removed in favor of stateTests
       stateSequences,
@@ -78,6 +84,7 @@ exports.createTestRun = async (req, res) => {
       stateTreeNodes,
       stateTreeLinks,
       ecpCsvUrl: `${base}/ecp-csv`,
+      ecpCrossCsvUrl: `${base}/ecp-cross-csv`,
       syntaxCsvUrl: `${base}/syntax-csv`,
       stateCsvUrl: `${base}/state-csv`,
       // if you expose a separate sequences CSV endpoint, add it here:
@@ -207,6 +214,7 @@ exports.getTestRun = async (req, res) => {
 
       // Download URLs
       ecpCsvUrl: `${base}/ecp-csv`,
+      ecpCrossCsvUrl: `${base}/ecp-cross-csv`,
       syntaxCsvUrl: `${base}/syntax-csv`,
       stateCsvUrl: `${base}/state-csv`,
       combinedCsvUrl: `${base}/csv`
@@ -226,7 +234,149 @@ exports.downloadEcpCsv = async (req, res) => {
     if (!run) return res.status(404).send('Not found');
     res.header('Content-Type', 'text/csv');
     res.attachment(`ecp-${run._id}.csv`);
+
+    // If no Decision Tree was provided for this run, return cross-product CSV
+    // (recompute on-demand from partitions if not embedded)
+    if (!run.decisionTreeFilename) {
+      if (run.ecpCrossCsvData && run.ecpCrossCsvData.length) {
+        return res.send(run.ecpCrossCsvData);
+      }
+      const partitions = Array.isArray(run.partitions) ? run.partitions : [];
+      const outVar = (() => {
+        const first = (run.testCases || [])[0] || {};
+        const keys = first.expected ? Object.keys(first.expected) : [];
+        return keys.length ? keys[0] : null;
+      })();
+      const used = partitions
+        .filter(p => p && Array.isArray(p.items) && p.items.length)
+        .filter(p => !outVar || p.name !== outVar)
+        .map(p => ({
+          name: p.name,
+          items: p.items.filter(it => {
+            const id = String(it.id || '').toLowerCase();
+            return id !== 'none' && id !== 'underflow' && id !== 'overflow';
+          })
+        }));
+      if (!used.length) return res.send(run.ecpCsvData || '');
+      const arrays = used.map(p => p.items.map(it => ({ var: p.name, sample: it.sample })));
+      const combos = arrays.reduce((acc, curr) => {
+        if (!acc.length) return curr.map(x => [x]);
+        const next = [];
+        for (const pre of acc) for (const x of curr) next.push([...pre, x]);
+        return next;
+      }, []);
+      const names = used.map(p => p.name);
+      const header = ['Test Case ID', 'Type', ...names, 'Coverage (%)'];
+      const total = Math.max(combos.length, 1);
+      const rows = combos.map((combo, idx) => {
+        const inputs = {};
+        combo.forEach(c => { inputs[c.var] = c.sample; });
+        return [
+          `TC${String(idx + 1).padStart(3, '0')}`,
+          'Valid',
+          ...names.map(n => inputs[n]),
+          `${(((idx + 1) / total) * 100).toFixed(2)}%`
+        ];
+      });
+      const csv = stringify([header, ...rows]);
+      return res.send(csv);
+    }
+
+    // With Decision Tree present, return the stored rule-based ECP CSV
     res.send(run.ecpCsvData);
+  } catch {
+    res.status(500).send('Server error');
+  }
+};
+
+// GET /api/runs/:id/ecp-cross-csv
+exports.downloadEcpCrossCsv = async (req, res) => {
+  try {
+    const run = await TestRun.findById(req.params.id);
+    if (!run) return res.status(404).send('Not found');
+    res.header('Content-Type', 'text/csv');
+    res.attachment(`ecp-cross-${run._id}.csv`);
+    if (run.ecpCrossCsvData && run.ecpCrossCsvData.length) {
+      return res.send(run.ecpCrossCsvData);
+    }
+
+    // Recompute on demand from saved partitions to avoid storing huge CSVs
+    const partitions = Array.isArray(run.partitions) ? run.partitions : [];
+    const outVar = (() => {
+      const first = (run.testCases || [])[0] || {};
+      const keys = first.expected ? Object.keys(first.expected) : [];
+      return keys.length ? keys[0] : null;
+    })();
+
+    const used = partitions
+      .filter(p => p && Array.isArray(p.items) && p.items.length)
+      .filter(p => !outVar || p.name !== outVar)
+      .map(p => ({
+        name: p.name,
+        // Keep only VALID buckets (exclude 'none', 'underflow', 'overflow')
+        items: p.items.filter(it => {
+          const id = String(it.id || '').toLowerCase();
+          return id !== 'none' && id !== 'underflow' && id !== 'overflow';
+        })
+      }));
+
+    if (!used.length) return res.send('');
+
+    // Cartesian product
+    const arrays = used.map(p => p.items.map(it => ({ var: p.name, sample: it.sample })));
+    const combos = arrays.reduce((acc, curr) => {
+      if (!acc.length) return curr.map(x => [x]);
+      const next = [];
+      for (const pre of acc) for (const x of curr) next.push([...pre, x]);
+      return next;
+    }, []);
+
+    const names = used.map(p => p.name);
+    const header = ['Test Case ID', 'Type', ...names, 'Coverage (%)'];
+
+    // Build baseline from first valid item per variable
+    const baseline = {};
+    used.forEach(p => { const it = (p.items[0] || {}); baseline[p.name] = it.sample; });
+
+    // Build invalid entries from original partitions (underflow/overflow/none)
+    const invalidEntries = [];
+    for (const p of partitions) {
+      if (!names.includes(p.name)) continue;
+      const uf = p.items.find(it => String(it.id || '').toLowerCase() === 'underflow');
+      const of = p.items.find(it => String(it.id || '').toLowerCase() === 'overflow');
+      const nn = p.items.find(it => String(it.id || '').toLowerCase() === 'none');
+      if (uf) invalidEntries.push({ var: p.name, value: uf.sample });
+      if (of) invalidEntries.push({ var: p.name, value: of.sample });
+      if (nn) invalidEntries.push({ var: p.name, value: nn.sample });
+    }
+
+    const total = Math.max(combos.length + invalidEntries.length, 1);
+    const validRows = combos.map((combo, idx) => {
+      const inputs = { ...baseline };
+      combo.forEach(c => { inputs[c.var] = c.sample; });
+      return [
+        `TC${String(idx + 1).padStart(3, '0')}`,
+        'Valid',
+        ...names.map(n => inputs[n]),
+        `${(((idx + 1) / total) * 100).toFixed(2)}%`
+      ];
+    });
+
+    const startInvalid = combos.length + 1;
+    const invalidRows = invalidEntries.map((ent, i) => {
+      const inputs = { ...baseline };
+      inputs[ent.var] = ent.value;
+      const idx = startInvalid + i;
+      return [
+        `TC${String(idx).padStart(3, '0')}`,
+        'Invalid',
+        ...names.map(n => inputs[n]),
+        `${((idx / total) * 100).toFixed(2)}%`
+      ];
+    });
+
+    const csv = stringify([header, ...validRows, ...invalidRows]);
+    return res.send(csv);
   } catch {
     res.status(500).send('Server error');
   }
@@ -367,6 +517,83 @@ exports.downloadCombined = async (req, res) => {
       ecpSheet.addRow(row);
     });
 
+    // ECP Cross-Product (comparison) sheet
+    const crossSheet = wb.addWorksheet('ECP Cross Product');
+    let crossCases = Array.isArray(run.crossProductCases) ? run.crossProductCases : [];
+    let crossInputKeys = crossCases.length ? Object.keys(crossCases[0].inputs) : [];
+    // If not embedded, recompute from partitions for the Excel sheet
+    if (!crossCases.length) {
+      const partitions = Array.isArray(run.partitions) ? run.partitions : [];
+      const outVar = (() => {
+        const first = (run.testCases || [])[0] || {};
+        const keys = first.expected ? Object.keys(first.expected) : [];
+        return keys.length ? keys[0] : null;
+      })();
+      const used = partitions
+        .filter(p => p && Array.isArray(p.items) && p.items.length)
+        .filter(p => !outVar || p.name !== outVar)
+        .map(p => ({
+          name: p.name,
+          items: p.items.filter(it => {
+            const id = String(it.id || '').toLowerCase();
+            return id !== 'none' && id !== 'underflow' && id !== 'overflow';
+          })
+        }));
+      const arrays = used.map(p => p.items.map(it => ({ var: p.name, sample: it.sample })));
+      const combos = arrays.reduce((acc, curr) => {
+        if (!acc.length) return curr.map(x => [x]);
+        const next = [];
+        for (const pre of acc) for (const x of curr) next.push([...pre, x]);
+        return next;
+      }, []);
+      crossInputKeys = used.map(p => p.name);
+      crossCases = combos.map((combo, idx) => {
+        const inputs = {};
+        combo.forEach(c => { inputs[c.var] = c.sample; });
+        return { testCaseID: `TC${String(idx + 1).padStart(3, '0')}`, type: 'Valid', inputs };
+      });
+    }
+    crossSheet.columns = [
+      { header: 'Test Case ID', key: 'testCaseID' },
+      { header: 'Type', key: 'type' },
+      ...crossInputKeys.map(k => ({ header: k, key: k })),
+      { header: 'Coverage (%)', key: 'coverage', style: { numFmt: '0.00%' } }
+    ];
+    // If we recomputed crossCases above, they currently contain only valids.
+    // Append DD-based invalids derived from partitions for completeness.
+    let invalidEntries = [];
+    if (!Array.isArray(run.crossProductCases) || run.crossProductCases.length === 0) {
+      const partitions = Array.isArray(run.partitions) ? run.partitions : [];
+      for (const p of partitions) {
+        if (!crossInputKeys.includes(p.name)) continue;
+        const uf = p.items.find(it => String(it.id || '').toLowerCase() === 'underflow');
+        const of = p.items.find(it => String(it.id || '').toLowerCase() === 'overflow');
+        const nn = p.items.find(it => String(it.id || '').toLowerCase() === 'none');
+        if (uf) invalidEntries.push({ var: p.name, value: uf.sample });
+        if (of) invalidEntries.push({ var: p.name, value: of.sample });
+        if (nn) invalidEntries.push({ var: p.name, value: nn.sample });
+      }
+    }
+
+    const totalCross = Math.max(crossCases.length + invalidEntries.length, 1);
+    crossCases.forEach((tc, idx) => {
+      const row = { testCaseID: tc.testCaseID, type: tc.type || 'Valid', coverage: (idx + 1) / totalCross };
+      crossInputKeys.forEach(k => row[k] = tc.inputs[k]);
+      crossSheet.addRow(row);
+    });
+
+    for (let i = 0; i < invalidEntries.length; i++) {
+      const idx = crossCases.length + 1 + i;
+      const ent = invalidEntries[i];
+      // baseline: first valid per column from existing first case if present
+      const base = {};
+      if (crossCases[0]) crossInputKeys.forEach(k => base[k] = crossCases[0].inputs[k]);
+      base[ent.var] = ent.value;
+      const row = { testCaseID: `TC${String(idx).padStart(3, '0')}`, type: 'Invalid', coverage: idx / totalCross };
+      crossInputKeys.forEach(k => row[k] = base[k]);
+      crossSheet.addRow(row);
+    }
+
     // Syntax sheet
     const syntaxSheet = wb.addWorksheet('Syntax Test Cases');
     syntaxSheet.columns = [
@@ -468,6 +695,20 @@ exports.downloadCombined = async (req, res) => {
     );
     await wb.xlsx.write(res);
     res.end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Server error');
+  }
+};
+
+// GET /api/runs/:id/combined-csv → legacy single CSV (already computed in service)
+exports.downloadCombinedCsvLegacy = async (req, res) => {
+  try {
+    const run = await TestRun.findById(req.params.id).lean();
+    if (!run) return res.status(404).send('Not found');
+    res.header('Content-Type', 'text/csv');
+    res.attachment(`combined-${run._id}.csv`);
+    res.send(run.combinedCsvData || '');
   } catch (err) {
     console.error(err);
     res.status(500).send('Server error');

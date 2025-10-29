@@ -54,6 +54,8 @@ const TestRunSchema = new Schema({
   stateTransitionFilename:   { type: String, default: null },
   partitions:             [PartitionSchema],
   testCases:              [TestCaseSchema],
+  // Cross-product ECP test cases (valid-only, DD-based)
+  crossProductCases:      { type: [TestCaseSchema], required: false, default: [] },
   syntaxResults:          [SyntaxSchema],
 
   // make stateTests optional, default to empty array
@@ -71,6 +73,8 @@ const TestRunSchema = new Schema({
   },
 
   ecpCsvData:      { type: String, required: true },
+  // New: CSV for cross-product ECP valids (DD-only)
+  ecpCrossCsvData: { type: String, required: false, default: '' },
   syntaxCsvData:   { type: String, required: true },
 
   // make stateCsvData optional with default empty string

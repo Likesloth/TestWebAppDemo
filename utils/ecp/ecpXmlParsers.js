@@ -106,23 +106,23 @@ async function processDataDictionary(inputXml) {
   });
 
   const output = usecase.Output;
-  if (!output) {
-    throw new Error("Output not found in Usecase.");
+  let outputMeta = null;
+  let actions = [];
+  if (output) {
+    outputMeta = {
+      varName: output.Varname,
+      type:    output.Scale
+    };
+
+    const rawActs = Array.isArray(output.Action)
+      ? output.Action
+      : (output.Action ? [output.Action] : []);
+
+    actions = rawActs.map(a => ({
+      id:    a.$.id,
+      value: a.$.value
+    }));
   }
-
-  const outputMeta = {
-    varName: output.Varname,
-    type:    output.Scale
-  };
-
-  const rawActs = Array.isArray(output.Action)
-    ? output.Action
-    : [output.Action];
-
-  const actions = rawActs.map(a => ({
-    id:    a.$.id,
-    value: a.$.value
-  }));
 
   return {
     inputsMeta,

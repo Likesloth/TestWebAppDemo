@@ -8,17 +8,21 @@ const {
   listTestRuns,
   getTestRun,
   downloadEcpCsv,
+  downloadEcpCrossCsv,
   downloadSyntaxCsv,
   downloadStateCsv,     // ← add this
-  downloadCombined  
+  downloadCombined,
+  downloadCombinedCsvLegacy  
 } = require('../controllers/testRunController')
 const validateUploadedXml = require('../utils/xmlValidator')
 
 // Public download endpoints
 router.get('/:id/ecp-csv',    downloadEcpCsv)
+router.get('/:id/ecp-cross-csv', downloadEcpCrossCsv)
 router.get('/:id/syntax-csv', downloadSyntaxCsv)
 router.get('/:id/state-csv',  downloadStateCsv)  // ← now defined
-router.get('/:id/csv',        downloadCombined)
+router.get('/:id/csv',            downloadCombined)
+router.get('/:id/combined-csv',   downloadCombinedCsvLegacy)
 
 // All the rest require auth
 router.use(auth)

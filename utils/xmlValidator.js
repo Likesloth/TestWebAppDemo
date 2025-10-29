@@ -7,14 +7,14 @@ module.exports = async function validateUploadedXml(req, res, next) {
   const dtFile = req.files.decisionTree  ?. [0];
   const smFile = req.files.stateMachine  ?. [0]; // optional
 
-  // both Data Dictionary and Decision Tree are required
-  if (!ddFile || !dtFile) {
-    console.warn('[Validator] Missing one or both XML uploads');
+  // Require Data Dictionary; Decision Tree is optional
+  if (!ddFile) {
+    console.warn('[Validator] Missing Data Dictionary upload');
     return res
       .status(400)
       .json({
         success: false,
-        error: 'Both Data Dictionary and Decision Tree XML files are required.'
+        error: 'Data Dictionary XML file is required.'
       });
   }
 
@@ -34,20 +34,22 @@ module.exports = async function validateUploadedXml(req, res, next) {
       });
   }
 
-  // 2) Validate the Decision Tree XML (from in-memory buffer)
-  try {
-    await parseXMLFile(dtFile.buffer);
-    console.log(`[Validator] ✅ Parsed DecisionTree XML: ${dtFile.originalname}`);
-  } catch (err) {
-    console.error(
-      `[Validator] ❌ DecisionTree parse error (${dtFile.originalname}): ${err.message}`
-    );
-    return res
-      .status(400)
-      .json({
-        success: false,
-        error: `Invalid Decision Tree XML (${dtFile.originalname}): ${err.message}`
-      });
+  // 2) Optional: Validate the Decision Tree XML if provided
+  if (dtFile && dtFile.buffer) {
+    try {
+      await parseXMLFile(dtFile.buffer);
+      console.log(`[Validator] ✅ Parsed DecisionTree XML: ${dtFile.originalname}`);
+    } catch (err) {
+      console.error(
+        `[Validator] ❌ DecisionTree parse error (${dtFile?.originalname || 'unknown'}): ${err.message}`
+      );
+      return res
+        .status(400)
+        .json({
+          success: false,
+          error: `Invalid Decision Tree XML (${dtFile?.originalname || 'unknown'}): ${err.message}`
+        });
+    }
   }
 
   // 3) Optional: Validate State Machine XML if provided

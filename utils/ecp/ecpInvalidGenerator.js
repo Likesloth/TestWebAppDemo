@@ -85,13 +85,14 @@ module.exports = async function generateInvalidEcpCases(dataDictionaryPath) {
         }
       }
     } else if (type === 'Nominal' || type === 'Ordinal') {
-      // Only include the None/null invalid case for variables that have categories
+      // Only include the None invalid case for variables that have categories
       const cats = typeConditions.filter(t => t.varName === varName);
       if (!cats.length) continue;
       testCases.push({
         testCaseID: `TC${String(nextIndex++).padStart(3, '0')}`,
         type: 'Invalid',
-        inputs: withOverride(varName, null),
+        // Show explicit placeholder instead of leaving blank
+        inputs: withOverride(varName, 'N/A'),
         expected: mkExpected(varName)
       });
     }

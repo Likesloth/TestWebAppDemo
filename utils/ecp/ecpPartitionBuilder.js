@@ -61,23 +61,21 @@ module.exports = async function generatePartitions(dataDictionaryPath) {
         label:  c.label,
         sample: c.label
       }));
-      items.push({ id: 'none', label: 'None', sample: null });
+      // Use visible placeholder for invalid/none bucket
+      items.push({ id: 'none', label: 'None', sample: 'N/A' });
       partitions.push({ name: varName, items });
     }
   }
 
-  // 2) Partition for OUTPUT
-  {
-    const { varName, type } = outputMeta;
-    // If output values are numeric, collapse into: [min-max], [None]
-    // Otherwise, keep original per-action buckets.
+  // 2) Partition for OUTPUT (optional)
+  if (outputMeta && Array.isArray(actions)) {
+    const { varName } = outputMeta;
     const numericActs = actions
       .map(a => ({ id: a.id, valueStr: a.value, valueNum: Number(a.value) }))
       .filter(a => Number.isFinite(a.valueNum));
 
     let items = [];
     if (numericActs.length === actions.length && numericActs.length > 0) {
-      // sort by numeric value and de-duplicate by value (keep first id)
       const sorted = [...numericActs].sort((a, b) => a.valueNum - b.valueNum);
       const unique = [];
       const seen = new Set();
@@ -87,24 +85,22 @@ module.exports = async function generatePartitions(dataDictionaryPath) {
           seen.add(a.valueNum);
         }
       }
-
       const min = unique[0];
       const max = unique[unique.length - 1];
-
-      // Single range item covering min..max. Use combined id for traceability.
       const rangeId = `${min.id}-${max.id}`;
       const rangeLabel = (min.valueNum === max.valueNum)
         ? String(min.valueNum)
         : `(${min.valueNum}, ${max.valueNum})`;
       items.push({ id: rangeId, label: rangeLabel, sample: min.valueNum });
-    } else {
-      // Non-numeric outputs: keep each as its own bucket
+    } else if (actions.length > 0) {
       items = actions.map(a => ({ id: a.id, label: a.value, sample: a.value }));
     }
 
-    // Always append a None bucket for outputs
-    items.push({ id: 'none', label: 'None', sample: null });
-    partitions.push({ name: varName, items });
+    if (items.length > 0) {
+      // Use visible placeholder for invalid/none bucket
+      items.push({ id: 'none', label: 'None', sample: 'N/A' });
+      partitions.push({ name: varName, items });
+    }
   }
 
   // 3) FILTER OUT any partitions that only have a single bucket

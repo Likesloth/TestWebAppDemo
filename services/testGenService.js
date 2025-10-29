@@ -4,6 +4,7 @@ const { stringify } = require('csv-stringify/sync');
 const buildEcpPartitions = require('../utils/ecp/ecpPartitionBuilder');
 const generateInvalidEcpCases = require('../utils/ecp/ecpInvalidGenerator');
 const { generateValidEcpFromFiles } = require('../utils/ecp/ecpValidGenerator');
+const { generateCrossProductArtifacts } = require('./crossProductService');
 const { processSyntaxDefs } = require('../utils/syntax/syntaxParser');
 const { generateSyntaxTests } = require('../utils/syntax/syntaxTestGenerator');
 const { processStateDefs } = require('../utils/stateTransition/stateMachineXmlParser');
@@ -50,22 +51,51 @@ module.exports.generateAll = async (
 ) => {
   // 1) ECP
   const partitions = await buildEcpPartitions(dataDictionaryPath);
-  // Option B: Use map-based resolver for valid cases, merge with legacy invalids
-  const validCases = await generateValidEcpFromFiles(
-    dataDictionaryPath,
-    decisionTreePath
-  );
-  // Generate only invalids from DD (decision tree not needed here)
-  const invalidCases = await generateInvalidEcpCases(
-    dataDictionaryPath
-  );
-  // Renumber invalids to continue after the last valid case ID
-  const startIdx = validCases.length + 1;
-  const renumberedInvalids = invalidCases.map((tc, i) => ({
-    ...tc,
-    testCaseID: `TC${String(startIdx + i).padStart(3, '0')}`
-  }));
-  const testCases = [...validCases, ...renumberedInvalids];
+  // Option A: Rule-based valids via Decision Tree (if provided)
+  const validCases = decisionTreePath
+    ? await generateValidEcpFromFiles(
+        dataDictionaryPath,
+        decisionTreePath
+      )
+    : [];
+  // Option B: Cross-product artifacts (valids + CSV with invalids)
+  const {
+    validCases: crossProductCases,
+    invalidCases: crossInvalidCases,
+    crossCsv: ecpCrossCsvData,
+    crossCasesForDoc,
+    ecpCrossCsvForDoc
+  } = await generateCrossProductArtifacts(dataDictionaryPath);
+  // Generate invalids from DD; if DT is missing and we are proving concept,
+  // avoid embedding massive arrays that could exceed Mongo's 16MB limit.
+  let testCases;
+  if (decisionTreePath) {
+    const invalidCases = await generateInvalidEcpCases(dataDictionaryPath);
+    const startIdx = validCases.length + 1;
+    const renumberedInvalids = invalidCases.map((tc, i) => ({
+      ...tc,
+      testCaseID: `TC${String(startIdx + i).padStart(3, '0')}`
+    }));
+    testCases = [...validCases, ...renumberedInvalids];
+  } else {
+    // No decision tree:
+    // Embed valids only if small enough; always include invalids (small)
+    const CROSS_EMBED_LIMIT = 10000; // rows (keep same threshold)
+    if (crossProductCases.length <= CROSS_EMBED_LIMIT) {
+      const startIdx = crossProductCases.length + 1;
+      const renumberedInvalids = crossInvalidCases.map((tc, i) => ({
+        ...tc,
+        testCaseID: `TC${String(startIdx + i).padStart(3, '0')}`
+      }));
+      testCases = [...crossProductCases, ...renumberedInvalids];
+    } else {
+      // Huge valids → don't embed them; embed only invalids
+      testCases = crossInvalidCases.map((tc, i) => ({
+        ...tc,
+        testCaseID: `TC${String(i + 1).padStart(3, '0')}`
+      }));
+    }
+  }
 
   // 2) Syntax
   const syntaxDefs = await processSyntaxDefs(dataDictionaryPath);
@@ -209,7 +239,7 @@ module.exports.generateAll = async (
 
   // 4) ECP CSV (with Coverage)
   const ecpInputKeys = testCases.length ? Object.keys(testCases[0].inputs) : [];
-  const ecpExpectedKeys = testCases.length ? Object.keys(testCases[0].expected) : [];
+  const ecpExpectedKeys = testCases.length ? Object.keys(testCases[0].expected || {}) : [];
   const ecpHeader = ['Test Case ID', 'Type', ...ecpInputKeys, ...ecpExpectedKeys, 'Coverage (%)'];
   const totalEcp = Math.max(testCases.length, 1);
   const ecpRows = testCases.map((tc, idx) => [
@@ -219,7 +249,20 @@ module.exports.generateAll = async (
     ...ecpExpectedKeys.map(k => tc.expected[k]),
     `${(((idx + 1) / totalEcp) * 100).toFixed(2)}%`
   ]);
-  const ecpCsvData = stringify([ecpHeader, ...ecpRows]);
+  let ecpCsvData = stringify([ecpHeader, ...ecpRows]);
+
+  // 4b) ECP Cross-Product CSV is prebuilt in the dedicated service
+
+  // Embedding results decided by the dedicated service
+  if (!decisionTreePath) {
+    // When DT is absent, the primary ECP export should reflect cross-product.
+    // If we didn't embed the cross CSV, fall back to a header-only CSV to
+    // satisfy schema requirements while keeping the download via the dedicated
+    // cross-product endpoint.
+    const crossInputKeysForHeader = crossProductCases.length ? Object.keys(crossProductCases[0].inputs) : [];
+    const crossHeaderLocal = ['Test Case ID', 'Type', ...crossInputKeysForHeader, 'Coverage (%)'];
+    ecpCsvData = ecpCrossCsvForDoc || stringify([crossHeaderLocal]);
+  }
 
   // 5) Syntax CSV
   const synHeader = ['Name', 'valid', 'invalidValue', 'invalidOmission', 'invalidAddition', 'invalidSubstitution'];
@@ -283,12 +326,14 @@ module.exports.generateAll = async (
   return {
     partitions,
     testCases,
+    crossProductCases: crossCasesForDoc,
     syntaxResults,
     stateTests,
     stateSequences,
     stateTreeNodes: _stateTreeNodes,
     stateTreeLinks: _stateTreeLinks,
     ecpCsvData,
+    ecpCrossCsvData: ecpCrossCsvForDoc,
     syntaxCsvData,
     stateCsvData,
     stateSeqCsvData,
