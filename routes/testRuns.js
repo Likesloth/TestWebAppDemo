@@ -29,11 +29,8 @@ router.use(auth)
 
 router.post(
   '/',
-  upload.fields([
-    { name: 'dataDictionary', maxCount: 1 },
-    { name: 'decisionTree',   maxCount: 1 },
-    { name: 'stateMachine',   maxCount: 1 }
-  ]),
+  // Accept any file field names; controller/validator will identify roles.
+  upload.any(),
   validateUploadedXml,
   createTestRun
 )

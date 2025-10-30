@@ -9,14 +9,29 @@ const { buildGraphFromStateTests, buildSequenceDiagramFromSequences } = require(
 exports.createTestRun = async (req, res) => {
   try {
     // 1) grab buffers from multer.memoryStorage()
-    const dataDictionaryBuffer = req.files.dataDictionary[0].buffer;
-    const decisionTreeBuffer = req.files.decisionTree?.[0]?.buffer; // optional for cross-product only
-    const stateMachineBuffer = req.files.stateMachine?.[0]?.buffer; // optional
+    // Normalize Multer files: handle .any() (array) and .fields() (object) modes
+    const filesArray = Array.isArray(req.files)
+      ? req.files
+      : Object.values(req.files || {}).flat();
+    const findByField = (name) => {
+      if (!name) return undefined;
+      if (Array.isArray(req.files)) return filesArray.find(f => f.fieldname === name);
+      return req.files?.[name]?.[0];
+    };
+
+    // Support current and legacy field names; if still not found, fallback to single uploaded file
+    let ddFile = findByField('dataDictionary') || findByField('usecasedatadic') || findByField('useCaseDataDic');
+    if (!ddFile && filesArray.length === 1) {
+      ddFile = filesArray[0];
+    }
+    const dataDictionaryBuffer = ddFile.buffer;
+    const decisionTreeBuffer = findByField('decisionTree')?.buffer; // optional for cross-product only
+    const stateMachineBuffer = findByField('stateMachine')?.buffer; // optional
 
     // original filenames for metadata
-    const dataDictionaryFilename = req.files.dataDictionary[0].originalname;
-    const decisionTreeFilename = req.files.decisionTree?.[0]?.originalname || null;
-    const stateMachineFilename = req.files.stateMachine?.[0]?.originalname || null;
+    const dataDictionaryFilename = ddFile.originalname;
+    const decisionTreeFilename = findByField('decisionTree')?.originalname || null;
+    const stateMachineFilename = findByField('stateMachine')?.originalname || null;
 
     // 2) generate everything (✅ use stateTests/stateSequences)
     const {
@@ -96,7 +111,6 @@ exports.createTestRun = async (req, res) => {
   }
 };
 
-
 // GET /api/runs
 exports.listTestRuns = async (req, res) => {
   try {
@@ -108,8 +122,6 @@ exports.listTestRuns = async (req, res) => {
     return res.status(500).json({ success: false, error: err.message });
   }
 };
-
-
 
 // GET /api/runs/:id
 exports.getTestRun = async (req, res) => {
@@ -224,8 +236,6 @@ exports.getTestRun = async (req, res) => {
     return res.status(500).json({ success: false, error: err.message });
   }
 };
-
-
 
 // GET /api/runs/:id/ecp-csv
 exports.downloadEcpCsv = async (req, res) => {

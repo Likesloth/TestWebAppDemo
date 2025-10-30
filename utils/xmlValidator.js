@@ -3,11 +3,28 @@ const { parseXMLFile } = require('./xmlParser');
 
 module.exports = async function validateUploadedXml(req, res, next) {
   // grab Multer’s uploaded file objects
-  const ddFile = req.files.dataDictionary?.[0];
-  const dtFile = req.files.decisionTree  ?. [0];
-  const smFile = req.files.stateMachine  ?. [0]; // optional
+  // Normalize files: Multer puts files in an array for .any(), or an object for .fields()
+  const filesArray = Array.isArray(req.files)
+    ? req.files
+    : Object.values(req.files || {}).flat();
 
-  // Require Data Dictionary; Decision Tree is optional
+  // Helper to find a file by field name (supports both shapes)
+  const findByField = (name) => {
+    if (!name) return undefined;
+    if (Array.isArray(req.files)) return filesArray.find(f => f.fieldname === name);
+    return req.files?.[name]?.[0];
+  };
+
+  // Accept new and legacy field names for Data Dictionary; if none, fallback to single uploaded file
+  let ddFile = findByField('dataDictionary') || findByField('usecasedatadic') || findByField('useCaseDataDic');
+  if (!ddFile && filesArray.length === 1) {
+    ddFile = filesArray[0];
+  }
+
+  const dtFile = findByField('decisionTree');
+  const smFile = findByField('stateMachine'); // optional
+
+  // Require Data Dictionary (either named field or single file); Decision Tree is optional
   if (!ddFile) {
     console.warn('[Validator] Missing Data Dictionary upload');
     return res
