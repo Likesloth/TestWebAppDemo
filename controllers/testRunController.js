@@ -24,14 +24,18 @@ exports.createTestRun = async (req, res) => {
     if (!ddFile && filesArray.length === 1) {
       ddFile = filesArray[0];
     }
+    const decisionTreeFile = findByField('decisionTree');
+    const stateMachineFile = findByField('stateMachine');
+
     const dataDictionaryBuffer = ddFile.buffer;
-    const decisionTreeBuffer = findByField('decisionTree')?.buffer; // optional for cross-product only
-    const stateMachineBuffer = findByField('stateMachine')?.buffer; // optional
+    const decisionTreeBuffer = decisionTreeFile?.buffer; // optional for cross-product only
+    const stateMachineBuffer = stateMachineFile?.buffer; // optional
 
     // original filenames for metadata
     const dataDictionaryFilename = ddFile.originalname;
-    const decisionTreeFilename = findByField('decisionTree')?.originalname || null;
-    const stateMachineFilename = findByField('stateMachine')?.originalname || null;
+    const decisionTreeFilename = decisionTreeFile?.originalname || null;
+    const stateMachineFilename = stateMachineFile?.originalname || null;
+    const stateMachineFilenames = stateMachineFile ? [stateMachineFile.originalname] : [];
 
     // 2) generate everything (✅ use stateTests/stateSequences)
     const {
@@ -57,6 +61,8 @@ exports.createTestRun = async (req, res) => {
       dataDictionaryFilename,
       decisionTreeFilename,
       stateTransitionFilename: stateMachineFilename,
+      stateMachineFilename,
+      stateMachineFilenames,
       partitions,
       testCases,
       syntaxResults,
@@ -116,7 +122,7 @@ exports.listTestRuns = async (req, res) => {
   try {
     const runs = await TestRun.find({ user: req.user.id })
       .sort({ createdAt: -1 })
-      .select('_id dataDictionaryFilename decisionTreeFilename stateTransitionFilename createdAt');
+      .select('_id dataDictionaryFilename decisionTreeFilename stateTransitionFilename stateMachineFilename stateMachineFilenames createdAt');
     return res.json({ success: true, runs });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
@@ -182,6 +188,8 @@ exports.getTestRun = async (req, res) => {
       dataDictionaryFilename: run.dataDictionaryFilename,
       decisionTreeFilename: run.decisionTreeFilename,
       stateTransitionFilename: run.stateTransitionFilename,
+      stateMachineFilename: run.stateMachineFilename,
+      stateMachineFilenames: run.stateMachineFilenames,
       partitions: run.partitions,
       testCases: run.testCases,
       syntaxResults: run.syntaxResults,

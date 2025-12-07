@@ -16,6 +16,14 @@ const {
 } = require('../controllers/testRunController')
 const validateUploadedXml = require('../utils/xmlValidator')
 
+const uploadFields = upload.fields([
+  { name: 'dataDictionary', maxCount: 1 },
+  { name: 'usecasedatadic', maxCount: 1 },
+  { name: 'useCaseDataDic', maxCount: 1 },
+  { name: 'decisionTree', maxCount: 1 },
+  { name: 'stateMachine', maxCount: 1 }
+])
+
 // Public download endpoints
 router.get('/:id/ecp-csv',    downloadEcpCsv)
 router.get('/:id/ecp-cross-csv', downloadEcpCrossCsv)
@@ -29,8 +37,7 @@ router.use(auth)
 
 router.post(
   '/',
-  // Accept any file field names; controller/validator will identify roles.
-  upload.any(),
+  uploadFields,
   validateUploadedXml,
   createTestRun
 )

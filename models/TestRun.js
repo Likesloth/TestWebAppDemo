@@ -52,6 +52,8 @@ const TestRunSchema = new Schema({
   dataDictionaryFilename: String,
   decisionTreeFilename:   String,
   stateTransitionFilename:   { type: String, default: null },
+  stateMachineFilename:   { type: String, default: null },
+  stateMachineFilenames:  { type: [String], default: [] },
   partitions:             [PartitionSchema],
   testCases:              [TestCaseSchema],
   // Cross-product ECP test cases (valid-only, DD-based)
